@@ -1,12 +1,14 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Heart, X, MessageCircle, User, Lock, MapPin, RotateCcw, Send, ChevronLeft, ShieldCheck, Sparkles, Search, Users, Euro, LocateFixed, GraduationCap, ExternalLink, Mail, ShieldAlert, Award, Briefcase, Stethoscope, Clock } from 'lucide-react';
+import { Heart, X, MessageCircle, User, Lock, MapPin, RotateCcw, Send, ChevronLeft, ShieldCheck, Sparkles, Search, Users, Euro, LocateFixed, GraduationCap, ExternalLink, Mail, ShieldAlert, Award, Briefcase, Stethoscope, ChevronDown, Plus } from 'lucide-react';
 import { supabase, isSupabaseConfigured } from './supabaseClient';
 import {
-  getMyProfile, upsertProfile, deleteMyProfile, listCandidates, listMyLikes, listMyPasses,
+  listMyProfiles, createProfile, deleteProfile, listCandidates, listMyLikes, listMyPasses,
   likeUser, passUser, findMatchId, listMyMatches, getMessages, sendMessage, subscribeMessages,
-  sendMagicLink, signOut,
+  signUpWithPassword, signInWithPassword, signOut,
   adminListUsers, adminListAllProfiles, adminListAllLikes, adminListAllMatches, adminListAllMessages,
 } from './lib/api';
+
+const ACTIVE_PROFILE_STORAGE_KEY = 'wechsel_active_profile_id';
 
 /* Muss mit is_admin() in supabase/admin_migration.sql übereinstimmen. Rein
    clientseitig nur für die Sichtbarkeit des Admin-Tabs relevant - der
@@ -18,7 +20,8 @@ const ADMIN_EMAILS = ['kevin.fromhund@hotmail.com'];
    ----------------------------------------------------------------------------
    Produktiv-Version mit echtem Backend:
      - Supabase Postgres statt window.storage (siehe supabase/schema.sql)
-     - Echtes Login per Magic-Link-E-Mail (Supabase Auth), kein Passwort nötig
+     - Echtes Login per E-Mail + Passwort (Supabase Auth), einmalige
+       Bestätigungsmail bei der Registrierung
      - Matches werden serverseitig per Datenbank-Trigger erzeugt, sobald ein
        gegenseitiges Like existiert (siehe schema.sql: handle_new_like)
      - Chat läuft in Echtzeit über Supabase Realtime
@@ -339,6 +342,14 @@ function displayNameOf(profile) {
   if (!profile) return '—';
   return profile.role === 'club' ? profile.clubName : profile.name;
 }
+/* Kurzlabel für den Profil-Umschalter (TopBar), z. B. "Spieler" / "Trainer" / "Verein". */
+function profileRoleLabel(profile) {
+  if (!profile) return '';
+  if (profile.role === 'player') return 'Spieler';
+  if (profile.role === 'club') return 'Verein';
+  if (profile.role === 'staff') return staffTypeByCode(profile.staffType)?.label || 'Staff';
+  return profile.role;
+}
 function initials(name) {
   if (!name) return '??';
   const parts = name.trim().split(/\s+/);
@@ -468,7 +479,7 @@ const PRIVACY_POLICY_PARAGRAPHS = [
   '6. Empfänger und externe Dienste\nBei Nutzung der Live-Standort-Funktion wird die Adress-Rückwärtssuche über OpenStreetMap/Nominatim durchgeführt; dabei werden Koordinaten an diesen Dienst übertragen. Der Link „Auf Google Maps ansehen" führt zu Google Maps; es gelten dort die Datenschutzbestimmungen von Google.',
   '7. Speicherdauer\nDeine Daten werden gespeichert, bis du dein Profil löschst oder deine Einwilligung widerrufst.',
   '8. Deine Rechte\nDu hast das Recht auf Auskunft, Berichtigung, Löschung, Einschränkung der Verarbeitung, Datenübertragbarkeit und Widerspruch sowie das Recht auf Beschwerde bei der österreichischen Datenschutzbehörde (dsb.gv.at).',
-  '9. Login\nDie Anmeldung erfolgt per Magic-Link: Du erhältst einen Anmeldelink per E-Mail und benötigst kein Passwort. Der Link ist zeitlich begrenzt gültig und sollte nicht an Dritte weitergegeben werden.',
+  '9. Login\nDie Registrierung erfolgt per E-Mail-Adresse und selbst gewähltem Passwort. Nach der Registrierung erhältst du eine Bestätigungsmail; erst nach Klick auf den Link darin ist dein Konto aktiv. Bitte gib dein Passwort nicht an Dritte weiter.',
   '10. Prototyp-Hinweis\nDies ist ein Prototyp zu Testzwecken, kein Produktivsystem. Testprofile können jederzeit über „Profil löschen" entfernt werden.',
 ];
 
@@ -507,9 +518,20 @@ function SetupScreen() {
 }
 
 function LoginScreen() {
+  const [mode, setMode] = useState('login'); // 'login' | 'signup'
   const [email, setEmail] = useState('');
-  const [status, setStatus] = useState('idle'); // idle | sending | sent | error
+  const [password, setPassword] = useState('');
+  const [passwordConfirm, setPasswordConfirm] = useState('');
+  const [status, setStatus] = useState('idle'); // idle | sending | signupSent | error
   const [errorMessage, setErrorMessage] = useState('');
+
+  function switchMode(nextMode) {
+    setMode(nextMode);
+    setStatus('idle');
+    setErrorMessage('');
+    setPassword('');
+    setPasswordConfirm('');
+  }
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -518,16 +540,37 @@ function LoginScreen() {
       setErrorMessage('Bitte gültige E-Mail-Adresse angeben.');
       return;
     }
+    if (password.length < 6) {
+      setStatus('error');
+      setErrorMessage('Das Passwort muss mindestens 6 Zeichen lang sein.');
+      return;
+    }
+    if (mode === 'signup' && password !== passwordConfirm) {
+      setStatus('error');
+      setErrorMessage('Die Passwörter stimmen nicht überein.');
+      return;
+    }
     setStatus('sending');
     try {
-      await sendMagicLink(email.trim().toLowerCase());
-      setStatus('sent');
+      if (mode === 'signup') {
+        const needsConfirmation = await signUpWithPassword(email.trim().toLowerCase(), password);
+        setStatus(needsConfirmation ? 'signupSent' : 'idle');
+      } else {
+        await signInWithPassword(email.trim().toLowerCase(), password);
+        // Erfolgreicher Login löst den onAuthStateChange-Listener in App aus, kein weiterer State nötig hier.
+      }
     } catch (err) {
       setStatus('error');
-      if (err?.status === 429 || /rate limit/i.test(err?.message || '')) {
-        setErrorMessage('Zu viele Anmeldeversuche in kurzer Zeit (Rate-Limit des kostenlosen E-Mail-Versands). Bitte einige Minuten warten und erneut versuchen.');
+      if (/already registered/i.test(err?.message || '')) {
+        setErrorMessage('Für diese E-Mail existiert bereits ein Konto. Bitte stattdessen anmelden.');
+      } else if (/invalid login credentials/i.test(err?.message || '')) {
+        setErrorMessage('E-Mail oder Passwort ist falsch.');
+      } else if (/email not confirmed/i.test(err?.message || '')) {
+        setErrorMessage('Bitte bestätige zuerst deine E-Mail-Adresse über den Link, den wir dir geschickt haben.');
+      } else if (err?.status === 429 || /rate limit/i.test(err?.message || '')) {
+        setErrorMessage('Zu viele Versuche in kurzer Zeit. Bitte einige Minuten warten und erneut versuchen.');
       } else {
-        setErrorMessage('Anmeldelink konnte nicht verschickt werden. Bitte später erneut versuchen.');
+        setErrorMessage(err?.message || 'Etwas ist schiefgelaufen. Bitte erneut versuchen.');
       }
     }
   }
@@ -537,31 +580,47 @@ function LoginScreen() {
       <div className="tm-brand"><span className="tm-brand-text">WECHSEL</span><span className="tm-brand-dot">.</span></div>
       <p className="tm-tagline">Transfers im Amateurfußball – anonym anbahnen, erst beim Match Klartext reden.</p>
 
-      {status === 'sent' ? (
+      {status === 'signupSent' ? (
         <div className="tm-email-gate">
           <Mail size={22} />
-          <div className="tm-card-name">Link verschickt!</div>
-          <div className="tm-card-sub">Öffne dein E-Mail-Postfach und tippe auf den Anmeldelink, um fortzufahren. Du kannst dieses Fenster offen lassen.</div>
+          <div className="tm-card-name">Fast geschafft!</div>
+          <div className="tm-card-sub">Öffne dein E-Mail-Postfach und bestätige deine Adresse über den Link darin. Danach kannst du dich hier mit deinem Passwort anmelden.</div>
+          <button type="button" className="tm-link-btn" onClick={() => switchMode('login')}>Zur Anmeldung</button>
         </div>
       ) : (
         <form className="tm-email-gate" onSubmit={handleSubmit}>
-          <label className="tm-label tm-label--wide">Anmelden per E-Mail (ohne Passwort)
+          <label className="tm-label tm-label--wide">E-Mail
             <input className="tm-input" type="email" placeholder="deine@email.at" value={email} onChange={e => setEmail(e.target.value)} />
           </label>
-          <button className="tm-btn tm-btn--primary" type="submit">{status === 'sending' ? 'Sende Link …' : 'Anmeldelink senden'}</button>
+          <label className="tm-label tm-label--wide">Passwort
+            <input className="tm-input" type="password" placeholder="mind. 6 Zeichen" value={password} onChange={e => setPassword(e.target.value)} />
+          </label>
+          {mode === 'signup' && (
+            <label className="tm-label tm-label--wide">Passwort wiederholen
+              <input className="tm-input" type="password" value={passwordConfirm} onChange={e => setPasswordConfirm(e.target.value)} />
+            </label>
+          )}
+          <button className="tm-btn tm-btn--primary" type="submit">
+            {status === 'sending' ? (mode === 'signup' ? 'Registriere …' : 'Melde an …') : (mode === 'signup' ? 'Registrieren' : 'Anmelden')}
+          </button>
           {status === 'error' && <div className="tm-error">{errorMessage}</div>}
-          <div className="tm-email-note">Du bekommst einen Link per E-Mail zugeschickt – kein Passwort nötig.</div>
+          {mode === 'login' ? (
+            <button type="button" className="tm-link-btn" onClick={() => switchMode('signup')}>Noch kein Konto? Registrieren</button>
+          ) : (
+            <button type="button" className="tm-link-btn" onClick={() => switchMode('login')}>Schon registriert? Anmelden</button>
+          )}
         </form>
       )}
     </div>
   );
 }
 
-function RoleSelect({ onSelect }) {
+function RoleSelect({ onSelect, onBack }) {
   return (
     <div className="tm-center-screen">
+      {onBack && <button className="tm-back-link" onClick={onBack}><ChevronLeft size={16} /> Zurück</button>}
       <div className="tm-brand"><span className="tm-brand-text">WECHSEL</span><span className="tm-brand-dot">.</span></div>
-      <p className="tm-tagline">Fast geschafft – leg jetzt dein Profil an.</p>
+      <p className="tm-tagline">{onBack ? 'Als wer möchtest du zusätzlich ein Profil anlegen?' : 'Fast geschafft – leg jetzt dein Profil an.'}</p>
       <div className="tm-role-cards">
         <button className="tm-role-card" onClick={() => onSelect('player')}>
           <User size={26} /><span className="tm-role-title">Ich bin Spieler</span><span className="tm-role-sub">Suche einen neuen Verein</span>
@@ -705,9 +764,9 @@ function OnboardingForm({ role, onBack, onSubmit }) {
               </select>
             </label>
             <div className="tm-stat-row">
-              <label className="tm-label tm-label--small">Einsätze<input className="tm-input" type="number" min="0" value={statsAdult.einsaetze} onChange={e => setStatsAdult(s => ({ ...s, einsaetze: Number(e.target.value) }))} /></label>
-              <label className="tm-label tm-label--small">Tore<input className="tm-input" type="number" min="0" value={statsAdult.tore} onChange={e => setStatsAdult(s => ({ ...s, tore: Number(e.target.value) }))} /></label>
-              <label className="tm-label tm-label--small">Vorlagen<input className="tm-input" type="number" min="0" value={statsAdult.vorlagen} onChange={e => setStatsAdult(s => ({ ...s, vorlagen: Number(e.target.value) }))} /></label>
+              <label className="tm-label tm-label--small">Einsätze<input className="tm-input" type="number" min="0" value={statsAdult.einsaetze} onFocus={e => e.target.select()} onChange={e => setStatsAdult(s => ({ ...s, einsaetze: Number(e.target.value) }))} /></label>
+              <label className="tm-label tm-label--small">Tore<input className="tm-input" type="number" min="0" value={statsAdult.tore} onFocus={e => e.target.select()} onChange={e => setStatsAdult(s => ({ ...s, tore: Number(e.target.value) }))} /></label>
+              <label className="tm-label tm-label--small">Vorlagen<input className="tm-input" type="number" min="0" value={statsAdult.vorlagen} onFocus={e => e.target.select()} onChange={e => setStatsAdult(s => ({ ...s, vorlagen: Number(e.target.value) }))} /></label>
             </div>
 
             <label className="tm-checkbox-row">
@@ -724,9 +783,9 @@ function OnboardingForm({ role, onBack, onSubmit }) {
                   </select>
                 </label>
                 <div className="tm-stat-row">
-                  <label className="tm-label tm-label--small">Einsätze<input className="tm-input" type="number" min="0" value={statsYouth.einsaetze} onChange={e => setStatsYouth(s => ({ ...s, einsaetze: Number(e.target.value) }))} /></label>
-                  <label className="tm-label tm-label--small">Tore<input className="tm-input" type="number" min="0" value={statsYouth.tore} onChange={e => setStatsYouth(s => ({ ...s, tore: Number(e.target.value) }))} /></label>
-                  <label className="tm-label tm-label--small">Vorlagen<input className="tm-input" type="number" min="0" value={statsYouth.vorlagen} onChange={e => setStatsYouth(s => ({ ...s, vorlagen: Number(e.target.value) }))} /></label>
+                  <label className="tm-label tm-label--small">Einsätze<input className="tm-input" type="number" min="0" value={statsYouth.einsaetze} onFocus={e => e.target.select()} onChange={e => setStatsYouth(s => ({ ...s, einsaetze: Number(e.target.value) }))} /></label>
+                  <label className="tm-label tm-label--small">Tore<input className="tm-input" type="number" min="0" value={statsYouth.tore} onFocus={e => e.target.select()} onChange={e => setStatsYouth(s => ({ ...s, tore: Number(e.target.value) }))} /></label>
+                  <label className="tm-label tm-label--small">Vorlagen<input className="tm-input" type="number" min="0" value={statsYouth.vorlagen} onFocus={e => e.target.select()} onChange={e => setStatsYouth(s => ({ ...s, vorlagen: Number(e.target.value) }))} /></label>
                 </div>
               </>
             )}
@@ -790,7 +849,7 @@ function OnboardingForm({ role, onBack, onSubmit }) {
                 </select>
               </label>
             )}
-            <label className="tm-label">Erfahrung (Jahre)<input className="tm-input" type="number" min="0" value={yearsExperience} onChange={e => setYearsExperience(Number(e.target.value))} /></label>
+            <label className="tm-label">Erfahrung (Jahre)<input className="tm-input" type="number" min="0" value={yearsExperience} onFocus={e => e.target.select()} onChange={e => setYearsExperience(Number(e.target.value))} /></label>
             <div className="tm-label">Standort<LocationField value={location} onChange={setLocation} /></div>
           </>
         ) : (
@@ -1127,7 +1186,7 @@ function ChatScreen({ matchId, partnerProfile, myId, onBack }) {
 
 /* ---------------------------- Profil-Tab ---------------------------- */
 
-function ProfileScreen({ profile, premiumDemo, onTogglePremium, onReset, onSignOut }) {
+function ProfileScreen({ profile, premiumDemo, onTogglePremium, onReset, onSignOut, onAddProfile, hasOtherProfiles }) {
   const [confirmReset, setConfirmReset] = useState(false);
   const [showPrivacy, setShowPrivacy] = useState(false);
   const isPlayer = profile.role === 'player';
@@ -1235,20 +1294,24 @@ function ProfileScreen({ profile, premiumDemo, onTogglePremium, onReset, onSignO
       {showPrivacy && <PolicyOverlay onClose={() => setShowPrivacy(false)} />}
 
       <div className="tm-disclaimer">
-        Diese Version läuft mit echtem Backend (Supabase) und echtem Login per Magic-Link. Für den vollständigen
+        Diese Version läuft mit echtem Backend (Supabase) und echtem Login per E-Mail + Passwort. Für den vollständigen
         Betrieb fehlen noch: Vereinsverifizierung, eine Zahlungsanbindung für die Premium-Stufe, eine native App
         sowie eine juristische Prüfung der Datenschutzerklärung. Die Ausbildungsentschädigung ist eine
         vereinfachte Schätzung, keine verbindliche oder rechtliche Berechnung. Der Standort nutzt Browser-Geolocation
         und OpenStreetMap statt einer eigenen Google-Maps/Places-Anbindung.
       </div>
 
+      <button type="button" className="tm-link-btn" onClick={onAddProfile}><Plus size={13} style={{ display: 'inline', verticalAlign: '-2px' }} /> Weiteres Profil hinzufügen (z. B. zusätzlich als Trainer)</button>
+
       <button type="button" className="tm-link-btn" onClick={onSignOut}>Abmelden</button>
 
       {!confirmReset ? (
-        <button className="tm-btn tm-btn--danger" onClick={() => setConfirmReset(true)}><RotateCcw size={14} /> Profil löschen &amp; neu starten</button>
+        <button className="tm-btn tm-btn--danger" onClick={() => setConfirmReset(true)}>
+          <RotateCcw size={14} /> {hasOtherProfiles ? 'Dieses Profil löschen' : 'Profil löschen & neu starten'}
+        </button>
       ) : (
         <div className="tm-confirm-row">
-          <span>Profil wirklich löschen?</span>
+          <span>{hasOtherProfiles ? 'Dieses Profil wirklich löschen?' : 'Profil wirklich löschen?'}</span>
           <button className="tm-btn tm-btn--danger" onClick={onReset}>Ja, löschen</button>
           <button className="tm-btn" onClick={() => setConfirmReset(false)}>Abbrechen</button>
         </div>
@@ -1296,21 +1359,21 @@ function AdminScreen() {
   if (loading) return <div className="tm-screen"><div className="tm-empty">Admin-Daten werden geladen …</div></div>;
   if (error) return <div className="tm-screen"><div className="tm-error">{error}</div></div>;
 
-  const profileById = new Map(profiles.map(p => [p.id, p]));
-  const roleLabelOf = (p, fallbackRole) => {
-    const role = p?.role || fallbackRole;
-    if (!role) return '—';
-    return role === 'staff' ? `staff (${staffTypeByCode(p?.staffType)?.label || p?.staffType || '?'})` : role;
+  const userById = new Map(users.map(u => [u.id, u]));
+  const roleLabelOf = (p) => {
+    if (!p?.role) return '—';
+    return p.role === 'staff' ? `staff (${staffTypeByCode(p.staffType)?.label || p.staffType || '?'})` : p.role;
   };
-  const likesGivenByUser = new Map();
-  likes.forEach(l => likesGivenByUser.set(l.liker_id, (likesGivenByUser.get(l.liker_id) || 0) + 1));
-  const matchCountByUser = new Map();
+  const likesGivenByProfile = new Map();
+  likes.forEach(l => likesGivenByProfile.set(l.liker_id, (likesGivenByProfile.get(l.liker_id) || 0) + 1));
+  const matchCountByProfile = new Map();
   matches.forEach(m => {
-    matchCountByUser.set(m.user_a, (matchCountByUser.get(m.user_a) || 0) + 1);
-    matchCountByUser.set(m.user_b, (matchCountByUser.get(m.user_b) || 0) + 1);
+    matchCountByProfile.set(m.user_a, (matchCountByProfile.get(m.user_a) || 0) + 1);
+    matchCountByProfile.set(m.user_b, (matchCountByProfile.get(m.user_b) || 0) + 1);
   });
-  const messageCountByUser = new Map();
-  messages.forEach(m => messageCountByUser.set(m.sender_id, (messageCountByUser.get(m.sender_id) || 0) + 1));
+  const messageCountByProfile = new Map();
+  messages.forEach(m => messageCountByProfile.set(m.sender_id, (messageCountByProfile.get(m.sender_id) || 0) + 1));
+  const profileById = new Map(profiles.map(p => [p.id, p]));
 
   return (
     <div className="tm-screen">
@@ -1323,22 +1386,22 @@ function AdminScreen() {
         <StatChip label="Nachrichten" value={messages.length} />
       </div>
 
-      <div className="tm-fieldset-title">Registrierte Nutzer:innen</div>
+      <div className="tm-fieldset-title">Profile (eine Person kann mehrere haben)</div>
       <div className="tm-admin-table-wrap">
         <table className="tm-admin-table">
           <thead>
-            <tr><th>E-Mail</th><th>Rolle</th><th>Name</th><th>Registriert</th><th>Likes</th><th>Matches</th><th>Nachr.</th></tr>
+            <tr><th>E-Mail</th><th>Rolle</th><th>Name</th><th>Angelegt</th><th>Likes</th><th>Matches</th><th>Nachr.</th></tr>
           </thead>
           <tbody>
-            {users.map(u => (
-              <tr key={u.id}>
-                <td>{u.email}</td>
-                <td>{roleLabelOf(profileById.get(u.id), u.role)}</td>
-                <td>{displayNameOf(profileById.get(u.id))}</td>
-                <td>{new Date(u.created_at).toLocaleDateString('de-AT')}</td>
-                <td>{likesGivenByUser.get(u.id) || 0}</td>
-                <td>{matchCountByUser.get(u.id) || 0}</td>
-                <td>{messageCountByUser.get(u.id) || 0}</td>
+            {profiles.map(p => (
+              <tr key={p.id}>
+                <td>{userById.get(p.user_id)?.email || '—'}</td>
+                <td>{roleLabelOf(p)}</td>
+                <td>{displayNameOf(p)}</td>
+                <td>{p.profileCreatedAt ? new Date(p.profileCreatedAt).toLocaleDateString('de-AT') : '—'}</td>
+                <td>{likesGivenByProfile.get(p.id) || 0}</td>
+                <td>{matchCountByProfile.get(p.id) || 0}</td>
+                <td>{messageCountByProfile.get(p.id) || 0}</td>
               </tr>
             ))}
           </tbody>
@@ -1366,13 +1429,39 @@ function AdminScreen() {
 
 /* ---------------------------- Navigation & Overlays ---------------------------- */
 
-function TopBar({ premiumDemo, onTogglePremium }) {
+function TopBar({ premiumDemo, onTogglePremium, profiles, activeProfile, onSwitchProfile, onAddProfile }) {
+  const [switcherOpen, setSwitcherOpen] = useState(false);
   return (
     <div className="tm-topbar">
       <div className="tm-brand tm-brand--small"><span className="tm-brand-text">WECHSEL</span><span className="tm-brand-dot">.</span></div>
-      <button className={'tm-chip' + (premiumDemo ? ' tm-chip--active' : '')} onClick={onTogglePremium}>
-        <ShieldCheck size={13} /> {premiumDemo ? 'Premium-Demo an' : 'Premium-Demo'}
-      </button>
+      <div className="tm-topbar-right">
+        {profiles.length > 1 && (
+          <div className="tm-profile-switcher">
+            <button className="tm-chip" onClick={() => setSwitcherOpen(v => !v)}>
+              {profileRoleLabel(activeProfile)} <ChevronDown size={12} />
+            </button>
+            {switcherOpen && (
+              <div className="tm-profile-switcher-menu">
+                {profiles.map(p => (
+                  <button
+                    key={p.id}
+                    className={'tm-profile-switcher-item' + (p.id === activeProfile?.id ? ' tm-profile-switcher-item--active' : '')}
+                    onClick={() => { onSwitchProfile(p.id); setSwitcherOpen(false); }}
+                  >
+                    {profileRoleLabel(p)}
+                  </button>
+                ))}
+                <button className="tm-profile-switcher-item tm-profile-switcher-item--add" onClick={() => { onAddProfile(); setSwitcherOpen(false); }}>
+                  <Plus size={12} /> Neues Profil
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+        <button className={'tm-chip' + (premiumDemo ? ' tm-chip--active' : '')} onClick={onTogglePremium}>
+          <ShieldCheck size={13} /> {premiumDemo ? 'Premium-Demo an' : 'Premium-Demo'}
+        </button>
+      </div>
     </div>
   );
 }
@@ -1418,11 +1507,19 @@ function MatchOverlay({ partner, onClose }) {
 export default function App() {
   const [authLoading, setAuthLoading] = useState(true);
   const [session, setSession] = useState(null);
-  const [profile, setProfile] = useState(null);
+  const [profiles, setProfiles] = useState([]);
+  const [activeProfileId, setActiveProfileId] = useState(null);
   const [profileLoading, setProfileLoading] = useState(true);
   const [pendingRole, setPendingRole] = useState(null);
   const [screen, setScreen] = useState('discover');
   const [premiumDemo, setPremiumDemo] = useState(false);
+
+  const profile = profiles.find(p => p.id === activeProfileId) || profiles[0] || null;
+
+  function switchActiveProfile(id) {
+    setActiveProfileId(id);
+    try { localStorage.setItem(ACTIVE_PROFILE_STORAGE_KEY, id); } catch { /* z. B. Privater Modus ohne localStorage */ }
+  }
 
   /* Demo-Spieler/-Vereine werden lokal im Browser gehalten (nicht in der
      Datenbank) – so sind sie immer verfügbar, auch bevor genug echte
@@ -1441,7 +1538,8 @@ export default function App() {
   const [activeChatId, setActiveChatId] = useState(null);
 
   /* Auth-Status von Supabase laufend verfolgen (inkl. Rückkehr über den
-     Magic-Link, der die Session automatisch aus der URL übernimmt). */
+     Bestätigungslink nach der Registrierung, der die Session automatisch
+     aus der URL übernimmt). */
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
       setSession(data.session);
@@ -1453,11 +1551,21 @@ export default function App() {
     return () => listener.subscription.unsubscribe();
   }, []);
 
-  /* Sobald eine Session existiert, das zugehörige Profil laden. */
+  /* Sobald eine Session existiert, alle Profile dieses Kontos laden (eine
+     Person kann mehrere haben, z. B. Spieler- UND Trainer-Profil). */
   useEffect(() => {
-    if (!session) { setProfile(null); setProfileLoading(false); return; }
+    if (!session) { setProfiles([]); setActiveProfileId(null); setProfileLoading(false); return; }
     setProfileLoading(true);
-    getMyProfile(session.user.id).then(p => { setProfile(p); setProfileLoading(false); });
+    listMyProfiles(session.user.id).then(list => {
+      setProfiles(list);
+      setProfileLoading(false);
+      if (list.length > 0) {
+        let stored = null;
+        try { stored = localStorage.getItem(ACTIVE_PROFILE_STORAGE_KEY); } catch { /* ignore */ }
+        const match = list.find(p => p.id === stored);
+        setActiveProfileId(match ? match.id : list[0].id);
+      }
+    });
   }, [session]);
 
   function reshuffleDemoData() {
@@ -1468,10 +1576,16 @@ export default function App() {
   }
 
   async function handleOnboardingSubmit(fields) {
-    const newProfile = await upsertProfile(session.user.id, pendingRole, fields);
-    setProfile(newProfile);
+    const newProfile = await createProfile(session.user.id, pendingRole, fields);
+    setProfiles(prev => [...prev, newProfile]);
+    switchActiveProfile(newProfile.id);
     setPendingRole(null);
     setScreen('discover');
+  }
+
+  function handleAddProfile() {
+    setPendingRole(null);
+    setScreen('addProfile');
   }
 
   async function loadDeck() {
@@ -1535,13 +1649,24 @@ export default function App() {
   }
 
   async function handleReset() {
-    if (profile) await deleteMyProfile(profile.id);
-    await signOut();
-    setProfile(null); setSession(null); setDeck([]); setMatches([]); setScreen('discover'); setPendingRole(null);
+    if (!profile) return;
+    await deleteProfile(profile.id);
+    const remaining = profiles.filter(p => p.id !== profile.id);
+    setProfiles(remaining);
+    setDeck([]); setMatches([]); setScreen('discover'); setPendingRole(null);
+    if (remaining.length > 0) {
+      switchActiveProfile(remaining[0].id);
+    } else {
+      await signOut();
+      setSession(null);
+      setActiveProfileId(null);
+      try { localStorage.removeItem(ACTIVE_PROFILE_STORAGE_KEY); } catch { /* ignore */ }
+    }
   }
 
   async function handleSignOut() {
     await signOut();
+    try { localStorage.removeItem(ACTIVE_PROFILE_STORAGE_KEY); } catch { /* ignore */ }
   }
 
   useEffect(() => { if (profile && screen === 'discover') loadDeck(); /* eslint-disable-next-line */ }, [profile, screen, demoPlayers, demoClubs, demoStaff]);
@@ -1561,15 +1686,24 @@ export default function App() {
         <LoginScreen />
       ) : profileLoading ? (
         <div className="tm-center-screen"><div className="tm-empty">Lädt …</div></div>
-      ) : !profile ? (
+      ) : profiles.length === 0 ? (
         pendingRole ? (
           <OnboardingForm role={pendingRole} onBack={() => setPendingRole(null)} onSubmit={handleOnboardingSubmit} />
         ) : (
           <RoleSelect onSelect={setPendingRole} />
         )
+      ) : screen === 'addProfile' ? (
+        pendingRole ? (
+          <OnboardingForm role={pendingRole} onBack={() => setPendingRole(null)} onSubmit={handleOnboardingSubmit} />
+        ) : (
+          <RoleSelect onSelect={setPendingRole} onBack={() => setScreen('profile')} />
+        )
       ) : (
         <div className="tm-app">
-          <TopBar premiumDemo={premiumDemo} onTogglePremium={() => setPremiumDemo(v => !v)} />
+          <TopBar
+            premiumDemo={premiumDemo} onTogglePremium={() => setPremiumDemo(v => !v)}
+            profiles={profiles} activeProfile={profile} onSwitchProfile={switchActiveProfile} onAddProfile={handleAddProfile}
+          />
           <main className="tm-main">
             {screen === 'discover' && (
               <DiscoverScreen myProfile={profile} premiumDemo={premiumDemo} deck={deck} deckLoading={deckLoading} onDecide={handleDecide} onReload={loadDeck} onSeedDemo={reshuffleDemoData} />
@@ -1581,7 +1715,10 @@ export default function App() {
               <ChatScreen matchId={activeChatMatch.matchId} partnerProfile={activeChatMatch.profile} myId={profile.id} onBack={() => setActiveChatId(null)} />
             )}
             {screen === 'profile' && (
-              <ProfileScreen profile={profile} premiumDemo={premiumDemo} onTogglePremium={() => setPremiumDemo(v => !v)} onReset={handleReset} onSignOut={handleSignOut} />
+              <ProfileScreen
+                profile={profile} premiumDemo={premiumDemo} onTogglePremium={() => setPremiumDemo(v => !v)}
+                onReset={handleReset} onSignOut={handleSignOut} onAddProfile={handleAddProfile} hasOtherProfiles={profiles.length > 1}
+              />
             )}
             {screen === 'admin' && isAdmin && <AdminScreen />}
           </main>
@@ -1674,6 +1811,20 @@ const CSS = `
 .tm-btn--danger { border-color: var(--abseits); color: var(--abseits); }
 
 .tm-topbar { display: flex; align-items: center; justify-content: space-between; padding: 16px 18px 8px; }
+.tm-topbar-right { display: flex; align-items: center; gap: 8px; }
+.tm-profile-switcher { position: relative; }
+.tm-profile-switcher-menu {
+  position: absolute; top: calc(100% + 6px); right: 0; background: var(--pitch-night); border: 1px solid var(--line);
+  border-radius: 10px; padding: 4px; display: flex; flex-direction: column; min-width: 140px; z-index: 20;
+  box-shadow: 0 12px 24px -8px rgba(0,0,0,0.6);
+}
+.tm-profile-switcher-item {
+  background: none; border: none; color: var(--chalk); font-size: 12.5px; text-align: left; padding: 8px 10px;
+  border-radius: 7px; cursor: pointer; display: flex; align-items: center; gap: 6px;
+}
+.tm-profile-switcher-item:hover { background: rgba(237,237,226,0.06); }
+.tm-profile-switcher-item--active { color: var(--floodlight); font-weight: 600; }
+.tm-profile-switcher-item--add { color: var(--chalk-dim); border-top: 1px solid var(--line); margin-top: 2px; padding-top: 8px; }
 .tm-chip {
   display: inline-flex; align-items: center; gap: 5px; background: var(--pitch-night); border: 1px solid var(--line);
   color: var(--chalk-dim); border-radius: 20px; padding: 6px 11px; font-size: 11.5px; cursor: pointer;

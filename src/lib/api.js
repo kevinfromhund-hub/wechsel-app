@@ -9,23 +9,28 @@ import { supabase } from '../supabaseClient';
 ============================================================================ */
 
 function fromRow(row) {
-  return { id: row.id, role: row.role, ...row.data };
+  return { id: row.id, user_id: row.user_id, role: row.role, profileCreatedAt: row.created_at, ...row.data };
 }
 
-export async function getMyProfile(userId) {
-  const { data, error } = await supabase.from('profiles').select('*').eq('id', userId).maybeSingle();
-  if (error || !data) return null;
+/* Ein Konto kann mehrere Profile besitzen (z. B. Spieler- UND Trainer-Profil
+   derselben Person) - liefert alle davon. */
+export async function listMyProfiles(userId) {
+  const { data, error } = await supabase.from('profiles').select('*').eq('user_id', userId);
+  if (error) return [];
+  return data.map(fromRow);
+}
+
+/* Legt immer ein NEUES Profil an (nie ein bestehendes überschreiben) - so
+   kann eine Person z. B. zusätzlich zum Spielerprofil ein Trainerprofil
+   anlegen. */
+export async function createProfile(userId, role, fields) {
+  const { data, error } = await supabase.from('profiles').insert({ user_id: userId, role, data: fields }).select().single();
+  if (error) throw error;
   return fromRow(data);
 }
 
-export async function upsertProfile(userId, role, fields) {
-  const { error } = await supabase.from('profiles').upsert({ id: userId, role, data: fields });
-  if (error) throw error;
-  return { id: userId, role, ...fields };
-}
-
-export async function deleteMyProfile(userId) {
-  await supabase.from('profiles').delete().eq('id', userId);
+export async function deleteProfile(profileId) {
+  await supabase.from('profiles').delete().eq('id', profileId);
 }
 
 export async function listCandidates(roles, excludeIds) {
@@ -161,13 +166,23 @@ export async function adminListAllMessages() {
   return data;
 }
 
-/* ---------------------------- Auth (Magic Link, kein Passwort) ---------------------------- */
+/* ---------------------------- Auth (E-Mail + Passwort) ---------------------------- */
 
-export async function sendMagicLink(email) {
-  const { error } = await supabase.auth.signInWithOtp({
-    email,
+/* Gibt true zurück, wenn Supabase eine Bestätigungs-E-Mail verschickt hat
+   (Konto also erst nach Klick auf den Link aktiv ist) - false, wenn
+   "Confirm email" im Supabase-Projekt deaktiviert ist und man direkt
+   eingeloggt ist. */
+export async function signUpWithPassword(email, password) {
+  const { data, error } = await supabase.auth.signUp({
+    email, password,
     options: { emailRedirectTo: window.location.origin },
   });
+  if (error) throw error;
+  return !data.session;
+}
+
+export async function signInWithPassword(email, password) {
+  const { error } = await supabase.auth.signInWithPassword({ email, password });
   if (error) throw error;
 }
 

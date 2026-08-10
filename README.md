@@ -2,7 +2,7 @@
 
 Transfer-Matching-App für den Amateurfußball (Österreich). Dieses Projekt ist die
 produktionsnahe Version mit echtem Backend (Supabase) und echtem Login per
-Magic-Link-E-Mail. Rechne mit **ca. 30–45 Minuten** für die komplette
+E-Mail + Passwort. Rechne mit **ca. 30–45 Minuten** für die komplette
 Ersteinrichtung.
 
 ## Was du brauchst (alles kostenlos für einen Test mit wenigen Personen)
@@ -30,20 +30,22 @@ Ersteinrichtung.
    Zugriffsregeln (Row Level Security) und der automatische Match-Mechanismus
    eingerichtet.
 
-## Schritt 3: Login (Magic-Link-E-Mail) konfigurieren
+## Schritt 3: Login (E-Mail + Passwort) konfigurieren
 
 1. Im Dashboard: **Authentication -> Providers -> Email**. Sollte standardmäßig
-   aktiviert sein (kein Passwort nötig, das nutzen wir hier nicht).
+   aktiviert sein.
 2. **Authentication -> URL Configuration**:
    - **Site URL**: erstmal `http://localhost:5173` eintragen (für die lokale
      Entwicklung). Nach dem Live-Deployment (Schritt 6) hier zusätzlich deine
      echte Domain als **Redirect URL** ergänzen, sonst landen Nutzer:innen nach
-     Klick auf den Anmeldelink auf der falschen Adresse.
-3. Kostenloser Tarif: Supabase verschickt Anmeldemails über einen
-   Standard-Mailserver mit **niedrigem Limit** (ca. 3–4 pro Stunde). Für einen
-   kleinen Testkreis reicht das notfalls, für mehr Testpersonen gleichzeitig:
-   unter **Authentication -> Providers -> Email -> SMTP Settings** einen
-   eigenen kostenlosen SMTP-Dienst (z. B. Resend, Brevo) hinterlegen.
+     Klick auf den Bestätigungslink auf der falschen Adresse.
+3. Bei der Registrierung verschickt Supabase einmalig eine Bestätigungsmail
+   (danach ist der Login rein per Passwort, ohne weitere E-Mails). Kostenloser
+   Tarif: Standard-Mailserver mit **niedrigem Limit** (ca. 3–4 pro Stunde) –
+   reicht für einen kleinen Testkreis meist aus, da jede Person nur einmal
+   eine Mail braucht. Für mehr gleichzeitige Neu-Registrierungen: unter
+   **Authentication -> Providers -> Email -> SMTP Settings** einen eigenen
+   kostenlosen SMTP-Dienst (z. B. Resend, Brevo) hinterlegen.
 
 ## Schritt 4: Zugangsdaten holen
 
@@ -113,8 +115,8 @@ Alternative: [Netlify](https://netlify.com) funktioniert nach demselben Prinzip
 
 ## Fehlerbehebung
 
-**"Magic Link kommt nicht an"** – Spam-Ordner prüfen; im kostenlosen Supabase-
-Tarif ist der Mailversand rate-limitiert (siehe Schritt 3).
+**"Bestätigungsmail kommt nicht an"** – Spam-Ordner prüfen; im kostenlosen
+Supabase-Tarif ist der Mailversand rate-limitiert (siehe Schritt 3).
 
 **"new row violates row-level security policy"** – meist bedeutet das, dass
 `supabase/schema.sql` nicht vollständig ausgeführt wurde. Im SQL Editor erneut
