@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Heart, X, MessageCircle, User, Lock, MapPin, RotateCcw, Send, ChevronLeft, ShieldCheck, Sparkles, Search, Users, Euro, LocateFixed, GraduationCap, ExternalLink, Mail, ShieldAlert, Award, Briefcase, Stethoscope, ChevronDown, Plus, LogOut } from 'lucide-react';
+import { Heart, X, MessageCircle, User, Lock, MapPin, RotateCcw, Send, ChevronLeft, ShieldCheck, Sparkles, Search, Users, Euro, LocateFixed, GraduationCap, ExternalLink, Mail, ShieldAlert, Award, Briefcase, Stethoscope, ChevronDown, Plus, LogOut, ArrowRight } from 'lucide-react';
 import { supabase, isSupabaseConfigured } from './supabaseClient';
 import {
   listMyProfiles, createProfile, updateProfile, deleteProfile, listCandidates, listMyLikes, listMyPasses,
@@ -564,7 +564,95 @@ function SetupScreen() {
   );
 }
 
-function LoginScreen() {
+function LandingPage({ onStart }) {
+  const [showPrivacy, setShowPrivacy] = useState(false);
+  return (
+    <div className="tm-landing">
+      <div className="tm-landing-hero">
+        <div className="tm-brand"><span className="tm-brand-text">WECHSEL</span><span className="tm-brand-dot">.</span></div>
+        <p className="tm-landing-headline">Der Transfermarkt für den Amateurfußball in Österreich.</p>
+        <p className="tm-landing-sub">
+          Spieler, Vereine, Trainer, Funktionär:innen, Physios und Masseur:innen finden sich anonym –
+          Namen und Kontaktdaten werden erst sichtbar, wenn beide Seiten Interesse zeigen.
+        </p>
+        <button className="tm-btn tm-btn--primary tm-landing-cta" onClick={onStart}>
+          Kostenlos starten <ArrowRight size={16} />
+        </button>
+      </div>
+
+      <div className="tm-landing-section">
+        <div className="tm-fieldset-title">So funktioniert's</div>
+        <div className="tm-landing-steps">
+          <div className="tm-landing-step">
+            <div className="tm-landing-step-num">1</div>
+            <div>
+              <div className="tm-card-name">Profil anlegen</div>
+              <div className="tm-card-sub">Anonym, ohne Namen oder Foto – nur die für ein Matching relevanten Eckdaten.</div>
+            </div>
+          </div>
+          <div className="tm-landing-step">
+            <div className="tm-landing-step-num">2</div>
+            <div>
+              <div className="tm-card-name">Swipen &amp; matchen</div>
+              <div className="tm-card-sub">Zeig Interesse an Spielern, Vereinen oder Staff – bei Gegenseitigkeit entsteht sofort ein Match.</div>
+            </div>
+          </div>
+          <div className="tm-landing-step">
+            <div className="tm-landing-step-num">3</div>
+            <div>
+              <div className="tm-card-name">Chatten &amp; Kontakt austauschen</div>
+              <div className="tm-card-sub">Erst nach dem Match werden Name und Details sichtbar – dann geht's direkt im Chat weiter.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="tm-landing-section">
+        <div className="tm-fieldset-title">Für wen?</div>
+        <div className="tm-landing-audience-grid">
+          <div className="tm-landing-audience-card">
+            <User size={20} />
+            <div className="tm-card-name">Spieler</div>
+            <div className="tm-card-sub">Neuen Verein finden, Ausbildungsentschädigung direkt sehen.</div>
+          </div>
+          <div className="tm-landing-audience-card">
+            <Users size={20} />
+            <div className="tm-card-name">Vereine</div>
+            <div className="tm-card-sub">Spieler &amp; Staff für offene Positionen finden.</div>
+          </div>
+          <div className="tm-landing-audience-card">
+            <Briefcase size={20} />
+            <div className="tm-card-name">Trainer &amp; Funktionäre</div>
+            <div className="tm-card-sub">Vereine finden, die genau euch suchen.</div>
+          </div>
+          <div className="tm-landing-audience-card">
+            <Stethoscope size={20} />
+            <div className="tm-card-name">Physio &amp; Masseur:in</div>
+            <div className="tm-card-sub">Spieler und Vereine mit Betreuungsbedarf finden.</div>
+          </div>
+        </div>
+      </div>
+
+      <div className="tm-landing-section">
+        <div className="tm-fieldset-title">Warum WECHSEL.</div>
+        <div className="tm-landing-features">
+          <div className="tm-landing-feature"><Lock size={16} /> Anonym bis zum Match – kein Name, kein Foto vorher sichtbar</div>
+          <div className="tm-landing-feature"><Euro size={16} /> Automatische Schätzung der Ausbildungsentschädigung</div>
+          <div className="tm-landing-feature"><MapPin size={16} /> Zeigt nur die Entfernung, nie den exakten Standort anderer</div>
+          <div className="tm-landing-feature"><MessageCircle size={16} /> Chat direkt in der App, sobald ihr gematcht habt</div>
+        </div>
+      </div>
+
+      <div className="tm-landing-footer">
+        <button className="tm-btn tm-btn--primary tm-landing-cta" onClick={onStart}>Kostenlos starten <ArrowRight size={16} /></button>
+        <button type="button" className="tm-link-btn" onClick={() => setShowPrivacy(true)}>Datenschutzerklärung</button>
+      </div>
+      {showPrivacy && <PolicyOverlay onClose={() => setShowPrivacy(false)} />}
+    </div>
+  );
+}
+
+function LoginScreen({ onBack }) {
   const [mode, setMode] = useState('login'); // 'login' | 'signup'
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -624,6 +712,7 @@ function LoginScreen() {
 
   return (
     <div className="tm-center-screen">
+      {onBack && <button className="tm-back-link" onClick={onBack}><ChevronLeft size={16} /> Zurück</button>}
       <div className="tm-brand"><span className="tm-brand-text">WECHSEL</span><span className="tm-brand-dot">.</span></div>
       <p className="tm-tagline">Transfers im Amateurfußball – anonym anbahnen, erst beim Match Klartext reden.</p>
 
@@ -1623,6 +1712,7 @@ function MatchOverlay({ partner, onClose }) {
 
 export default function App() {
   const [authLoading, setAuthLoading] = useState(true);
+  const [showLanding, setShowLanding] = useState(true);
   const [session, setSession] = useState(null);
   const [profiles, setProfiles] = useState([]);
   const [activeProfileId, setActiveProfileId] = useState(null);
@@ -1848,7 +1938,7 @@ export default function App() {
       ) : authLoading ? (
         <div className="tm-center-screen"><div className="tm-empty">Lädt …</div></div>
       ) : !session ? (
-        <LoginScreen />
+        showLanding ? <LandingPage onStart={() => setShowLanding(false)} /> : <LoginScreen onBack={() => setShowLanding(true)} />
       ) : profileLoading ? (
         <div className="tm-center-screen"><div className="tm-empty">Lädt …</div></div>
       ) : profiles.length === 0 ? (
@@ -1936,6 +2026,30 @@ const CSS = `
 .tm-tagline { color: var(--chalk-dim); font-size: 14.5px; max-width: 320px; text-align: center; margin: 6px 0 28px; line-height: 1.5; }
 
 .tm-center-screen { min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 24px; max-width: 460px; margin: 0 auto; }
+
+.tm-landing { min-height: 100vh; max-width: 460px; margin: 0 auto; padding: 40px 20px 32px; display: flex; flex-direction: column; gap: 34px; }
+.tm-landing-hero { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 12px; }
+.tm-landing-headline { font-family: 'Bebas Neue', sans-serif; font-size: 26px; letter-spacing: 0.5px; line-height: 1.2; color: var(--chalk); max-width: 360px; }
+.tm-landing-sub { color: var(--chalk-dim); font-size: 14px; line-height: 1.55; max-width: 360px; }
+.tm-landing-cta { width: 100%; max-width: 300px; margin-top: 6px; }
+.tm-landing-section { display: flex; flex-direction: column; gap: 12px; }
+.tm-landing-steps { display: flex; flex-direction: column; gap: 14px; }
+.tm-landing-step { display: flex; gap: 12px; align-items: flex-start; }
+.tm-landing-step-num {
+  flex-shrink: 0; width: 26px; height: 26px; border-radius: 50%; background: rgba(244,195,97,0.12); color: var(--floodlight);
+  border: 1px solid rgba(244,195,97,0.4); display: flex; align-items: center; justify-content: center;
+  font-family: 'IBM Plex Mono', monospace; font-weight: 600; font-size: 12.5px;
+}
+.tm-landing-audience-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.tm-landing-audience-card {
+  background: var(--pitch-night); border: 1px solid var(--line); border-radius: 12px; padding: 14px;
+  display: flex; flex-direction: column; gap: 5px; color: var(--floodlight);
+}
+.tm-landing-audience-card .tm-card-name { color: var(--chalk); }
+.tm-landing-features { display: flex; flex-direction: column; gap: 10px; }
+.tm-landing-feature { display: flex; align-items: center; gap: 9px; font-size: 13.5px; color: var(--chalk-dim); }
+.tm-landing-feature svg { color: var(--floodlight); flex-shrink: 0; }
+.tm-landing-footer { display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center; padding-top: 8px; border-top: 1px dashed var(--line); }
 
 .tm-role-cards { display: flex; flex-direction: column; gap: 12px; width: 100%; max-width: 340px; }
 .tm-role-card {
