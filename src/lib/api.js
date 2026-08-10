@@ -33,6 +33,21 @@ export async function deleteProfile(profileId) {
   await supabase.from('profiles').delete().eq('id', profileId);
 }
 
+export async function updateProfile(profileId, fields) {
+  const { data, error } = await supabase.from('profiles').update({ data: fields }).eq('id', profileId).select().single();
+  if (error) throw error;
+  return fromRow(data);
+}
+
+/* Nur für Admin-Accounts nutzbar (siehe is_admin() in admin_migration.sql +
+   die erweiterten RLS-Policies in admin_seed_profiles_migration.sql). Legt
+   ein Profil ohne echtes Konto an (user_id null) - für Testdaten. */
+export async function adminCreateProfile(role, fields) {
+  const { data, error } = await supabase.from('profiles').insert({ user_id: null, role, data: fields }).select().single();
+  if (error) throw error;
+  return fromRow(data);
+}
+
 export async function listCandidates(roles, excludeIds) {
   const roleList = Array.isArray(roles) ? roles : [roles];
   const { data, error } = await supabase.from('profiles').select('*').in('role', roleList);

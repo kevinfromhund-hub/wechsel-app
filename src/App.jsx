@@ -2,10 +2,10 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Heart, X, MessageCircle, User, Lock, MapPin, RotateCcw, Send, ChevronLeft, ShieldCheck, Sparkles, Search, Users, Euro, LocateFixed, GraduationCap, ExternalLink, Mail, ShieldAlert, Award, Briefcase, Stethoscope, ChevronDown, Plus } from 'lucide-react';
 import { supabase, isSupabaseConfigured } from './supabaseClient';
 import {
-  listMyProfiles, createProfile, deleteProfile, listCandidates, listMyLikes, listMyPasses,
+  listMyProfiles, createProfile, updateProfile, deleteProfile, listCandidates, listMyLikes, listMyPasses,
   likeUser, passUser, findMatchId, listMyMatches, getMessages, sendMessage, subscribeMessages,
   signUpWithPassword, signInWithPassword, signOut,
-  adminListUsers, adminListAllProfiles, adminListAllLikes, adminListAllMatches, adminListAllMessages,
+  adminListUsers, adminListAllProfiles, adminListAllLikes, adminListAllMatches, adminListAllMessages, adminCreateProfile,
 } from './lib/api';
 
 const ACTIVE_PROFILE_STORAGE_KEY = 'wechsel_active_profile_id';
@@ -273,6 +273,7 @@ function generateDemoPlayer(index, sessionSeed) {
     statsYouth: hasYouth ? { einsaetze: randInt(5, 26), tore: isGK ? 0 : randInt(0, 15), vorlagen: isGK ? 0 : randInt(0, 12) } : { einsaetze: 0, tore: 0, vorlagen: 0 },
     startDate, hasBreak, breakFrom, breakTo, laz, lazSince, lazUntil, academy, academySince, academyUntil,
     selfNoCompensationClaim: randBool(0.15),
+    needsPhysio: randBool(0.2), needsMasseur: randBool(0.2),
     createdAt: 1,
   };
 }
@@ -314,6 +315,7 @@ function generateDemoStaffPerson(index, sessionSeed) {
     location: { label: cityName, lat: coords[0], lng: coords[1] },
     yearsExperience: randInt(1, 20),
     qualification: randChoice(staffQualificationOptions(staffType)),
+    earliestAppointmentWeeks: staffType === 'physio' ? randInt(1, 8) : undefined,
     createdAt: 1,
   };
 }
@@ -636,46 +638,50 @@ function RoleSelect({ onSelect, onBack }) {
   );
 }
 
-function OnboardingForm({ role, onBack, onSubmit }) {
+function OnboardingForm({ role, onBack, onSubmit, initialValues }) {
   const isPlayer = role === 'player';
   const isStaff = role === 'staff';
   const isClub = role === 'club';
-  const [name, setName] = useState('');
-  const [birthDate, setBirthDate] = useState('');
-  const [position, setPosition] = useState('');
-  const [secondaryPosition, setSecondaryPosition] = useState('');
-  const [strongFoot, setStrongFoot] = useState('');
-  const [location, setLocation] = useState(null);
-  const [leagueAdult, setLeagueAdult] = useState('');
-  const [statsAdult, setStatsAdult] = useState({ einsaetze: 0, tore: 0, vorlagen: 0 });
-  const [hasYouth, setHasYouth] = useState(false);
-  const [leagueYouth, setLeagueYouth] = useState('');
-  const [statsYouth, setStatsYouth] = useState({ einsaetze: 0, tore: 0, vorlagen: 0 });
+  const isEditing = Boolean(initialValues);
+  const [name, setName] = useState(initialValues?.name || '');
+  const [birthDate, setBirthDate] = useState(initialValues?.birthDate || '');
+  const [position, setPosition] = useState(initialValues?.position || '');
+  const [secondaryPosition, setSecondaryPosition] = useState(initialValues?.secondaryPosition || '');
+  const [strongFoot, setStrongFoot] = useState(initialValues?.strongFoot || '');
+  const [location, setLocation] = useState(initialValues?.location || null);
+  const [leagueAdult, setLeagueAdult] = useState(initialValues?.leagueAdult || '');
+  const [statsAdult, setStatsAdult] = useState(initialValues?.statsAdult || { einsaetze: 0, tore: 0, vorlagen: 0 });
+  const [hasYouth, setHasYouth] = useState(Boolean(initialValues?.leagueYouth));
+  const [leagueYouth, setLeagueYouth] = useState(initialValues?.leagueYouth || '');
+  const [statsYouth, setStatsYouth] = useState(initialValues?.statsYouth || { einsaetze: 0, tore: 0, vorlagen: 0 });
+  const [needsPhysio, setNeedsPhysio] = useState(initialValues?.needsPhysio || false);
+  const [needsMasseur, setNeedsMasseur] = useState(initialValues?.needsMasseur || false);
 
-  const [startDate, setStartDate] = useState('');
-  const [hasBreak, setHasBreak] = useState(false);
-  const [breakFrom, setBreakFrom] = useState('');
-  const [breakTo, setBreakTo] = useState('');
-  const [laz, setLaz] = useState(false);
-  const [lazSince, setLazSince] = useState('');
-  const [lazUntil, setLazUntil] = useState('');
-  const [academy, setAcademy] = useState(false);
-  const [academySince, setAcademySince] = useState('');
-  const [academyUntil, setAcademyUntil] = useState('');
-  const [selfNoCompensationClaim, setSelfNoCompensationClaim] = useState(false);
+  const [startDate, setStartDate] = useState(initialValues?.startDate || '');
+  const [hasBreak, setHasBreak] = useState(initialValues?.hasBreak || false);
+  const [breakFrom, setBreakFrom] = useState(initialValues?.breakFrom || '');
+  const [breakTo, setBreakTo] = useState(initialValues?.breakTo || '');
+  const [laz, setLaz] = useState(initialValues?.laz || false);
+  const [lazSince, setLazSince] = useState(initialValues?.lazSince || '');
+  const [lazUntil, setLazUntil] = useState(initialValues?.lazUntil || '');
+  const [academy, setAcademy] = useState(initialValues?.academy || false);
+  const [academySince, setAcademySince] = useState(initialValues?.academySince || '');
+  const [academyUntil, setAcademyUntil] = useState(initialValues?.academyUntil || '');
+  const [selfNoCompensationClaim, setSelfNoCompensationClaim] = useState(initialValues?.selfNoCompensationClaim || false);
 
-  const [clubName, setClubName] = useState('');
-  const [contactPerson, setContactPerson] = useState('');
-  const [league, setLeague] = useState('');
-  const [searchedPositions, setSearchedPositions] = useState([]);
-  const [searchedStaffTypes, setSearchedStaffTypes] = useState([]);
+  const [clubName, setClubName] = useState(initialValues?.clubName || '');
+  const [contactPerson, setContactPerson] = useState(initialValues?.contactPerson || '');
+  const [league, setLeague] = useState(initialValues?.league || '');
+  const [searchedPositions, setSearchedPositions] = useState(initialValues?.searchedPositions || []);
+  const [searchedStaffTypes, setSearchedStaffTypes] = useState(initialValues?.searchedStaffTypes || []);
 
-  const [staffType, setStaffType] = useState('');
-  const [yearsExperience, setYearsExperience] = useState(0);
-  const [qualification, setQualification] = useState('');
+  const [staffType, setStaffType] = useState(initialValues?.staffType || '');
+  const [yearsExperience, setYearsExperience] = useState(initialValues?.yearsExperience || 0);
+  const [qualification, setQualification] = useState(initialValues?.qualification || '');
+  const [earliestAppointmentWeeks, setEarliestAppointmentWeeks] = useState(initialValues?.earliestAppointmentWeeks ?? '');
 
-  const [privacyConsent, setPrivacyConsent] = useState(false);
-  const [parentalConsent, setParentalConsent] = useState(false);
+  const [privacyConsent, setPrivacyConsent] = useState(isEditing);
+  const [parentalConsent, setParentalConsent] = useState(initialValues?.parentalConsent || false);
   const [showPrivacy, setShowPrivacy] = useState(false);
 
   const [err, setErr] = useState('');
@@ -691,8 +697,10 @@ function OnboardingForm({ role, onBack, onSubmit }) {
 
   function handleSubmit(e) {
     e.preventDefault();
-    if (!privacyConsent) { setErr('Bitte stimme der Datenschutzerklärung zu.'); return; }
-    if (isMinor && !parentalConsent) { setErr('Bitte bestätige die Einwilligung deiner Erziehungsberechtigten.'); return; }
+    if (!isEditing) {
+      if (!privacyConsent) { setErr('Bitte stimme der Datenschutzerklärung zu.'); return; }
+      if (isMinor && !parentalConsent) { setErr('Bitte bestätige die Einwilligung deiner Erziehungsberechtigten.'); return; }
+    }
     if (isPlayer) {
       if (!name.trim() || !birthDate || !position || !strongFoot || !location?.label || !leagueAdult || !startDate) {
         setErr('Bitte fülle alle Pflichtfelder aus (inkl. Geburtsdatum, Beginn Fußballspielen und Standort).'); return;
@@ -708,8 +716,8 @@ function OnboardingForm({ role, onBack, onSubmit }) {
         startDate, hasBreak, breakFrom: hasBreak ? breakFrom : '', breakTo: hasBreak ? breakTo : '',
         laz, lazSince: laz ? lazSince : '', lazUntil: laz ? lazUntil : '',
         academy, academySince: academy ? academySince : '', academyUntil: academy ? academyUntil : '',
-        selfNoCompensationClaim,
-        privacyConsentAt: Date.now(), parentalConsent: isMinor ? true : false,
+        selfNoCompensationClaim, needsPhysio, needsMasseur,
+        privacyConsentAt: initialValues?.privacyConsentAt || Date.now(), parentalConsent: isMinor ? true : false,
       });
     } else if (isStaff) {
       if (!name.trim() || !staffType || !qualification || !location?.label) {
@@ -717,20 +725,23 @@ function OnboardingForm({ role, onBack, onSubmit }) {
       }
       onSubmit({
         name: name.trim(), birthDate, staffType, qualification, yearsExperience, location,
-        privacyConsentAt: Date.now(), parentalConsent: isMinor ? true : false,
+        earliestAppointmentWeeks: staffType === 'physio' && earliestAppointmentWeeks !== '' ? Number(earliestAppointmentWeeks) : undefined,
+        privacyConsentAt: initialValues?.privacyConsentAt || Date.now(), parentalConsent: isMinor ? true : false,
       });
     } else {
       if (!clubName.trim() || !location?.label || !league || (searchedPositions.length === 0 && searchedStaffTypes.length === 0)) {
         setErr('Bitte fülle alle Pflichtfelder aus und wähle mind. eine gesuchte Position oder Staff-Rolle.'); return;
       }
-      onSubmit({ clubName: clubName.trim(), contactPerson: contactPerson.trim(), location, league, searchedPositions, searchedStaffTypes, privacyConsentAt: Date.now() });
+      onSubmit({ clubName: clubName.trim(), contactPerson: contactPerson.trim(), location, league, searchedPositions, searchedStaffTypes, privacyConsentAt: initialValues?.privacyConsentAt || Date.now() });
     }
   }
 
   return (
     <div className="tm-screen">
       <button className="tm-back-link" onClick={onBack}><ChevronLeft size={16} /> Zurück</button>
-      <h2 className="tm-h2">{isPlayer ? 'Spielerprofil anlegen' : isStaff ? 'Trainer-/Staff-Profil anlegen' : 'Vereinsprofil anlegen'}</h2>
+      <h2 className="tm-h2">
+        {isEditing ? 'Profil bearbeiten' : isPlayer ? 'Spielerprofil anlegen' : isStaff ? 'Trainer-/Staff-Profil anlegen' : 'Vereinsprofil anlegen'}
+      </h2>
       <form className="tm-form" onSubmit={handleSubmit}>
         {isPlayer ? (
           <>
@@ -830,6 +841,16 @@ function OnboardingForm({ role, onBack, onSubmit }) {
               <input type="checkbox" checked={selfNoCompensationClaim} onChange={e => setSelfNoCompensationClaim(e.target.checked)} />
               Für mich besteht keine Ausbildungsentschädigung (Selbstauskunft, z. B. Verzicht meines bisherigen Vereins)
             </label>
+
+            <div className="tm-fieldset-title">Betreuungsbedarf (optional)</div>
+            <label className="tm-checkbox-row">
+              <input type="checkbox" checked={needsPhysio} onChange={e => setNeedsPhysio(e.target.checked)} />
+              Ich suche eine:n Physio
+            </label>
+            <label className="tm-checkbox-row">
+              <input type="checkbox" checked={needsMasseur} onChange={e => setNeedsMasseur(e.target.checked)} />
+              Ich suche eine:n Masseur:in
+            </label>
           </>
         ) : isStaff ? (
           <>
@@ -850,6 +871,11 @@ function OnboardingForm({ role, onBack, onSubmit }) {
               </label>
             )}
             <label className="tm-label">Erfahrung (Jahre)<input className="tm-input" type="number" min="0" value={yearsExperience} onFocus={e => e.target.select()} onChange={e => setYearsExperience(Number(e.target.value))} /></label>
+            {staffType === 'physio' && (
+              <label className="tm-label">Frühester Termin (Wochen)
+                <input className="tm-input" type="number" min="0" value={earliestAppointmentWeeks} onFocus={e => e.target.select()} onChange={e => setEarliestAppointmentWeeks(e.target.value)} />
+              </label>
+            )}
             <div className="tm-label">Standort<LocationField value={location} onChange={setLocation} /></div>
           </>
         ) : (
@@ -884,22 +910,26 @@ function OnboardingForm({ role, onBack, onSubmit }) {
           </>
         )}
 
-        <div className="tm-fieldset-title">Datenschutz</div>
-        <button type="button" className="tm-link-btn" onClick={() => setShowPrivacy(true)}>Datenschutzerklärung lesen</button>
-        <label className="tm-checkbox-row">
-          <input type="checkbox" checked={privacyConsent} onChange={e => setPrivacyConsent(e.target.checked)} />
-          Ich habe die Datenschutzerklärung gelesen und stimme der Verarbeitung meiner Daten zu.
-        </label>
-        {isMinor && (
-          <label className="tm-checkbox-row">
-            <input type="checkbox" checked={parentalConsent} onChange={e => setParentalConsent(e.target.checked)} />
-            Meine Erziehungsberechtigten sind mit der Nutzung dieser App und der Veröffentlichung meines (anonymisierten) Profils einverstanden.
-          </label>
+        {!isEditing && (
+          <>
+            <div className="tm-fieldset-title">Datenschutz</div>
+            <button type="button" className="tm-link-btn" onClick={() => setShowPrivacy(true)}>Datenschutzerklärung lesen</button>
+            <label className="tm-checkbox-row">
+              <input type="checkbox" checked={privacyConsent} onChange={e => setPrivacyConsent(e.target.checked)} />
+              Ich habe die Datenschutzerklärung gelesen und stimme der Verarbeitung meiner Daten zu.
+            </label>
+            {isMinor && (
+              <label className="tm-checkbox-row">
+                <input type="checkbox" checked={parentalConsent} onChange={e => setParentalConsent(e.target.checked)} />
+                Meine Erziehungsberechtigten sind mit der Nutzung dieser App und der Veröffentlichung meines (anonymisierten) Profils einverstanden.
+              </label>
+            )}
+            {showPrivacy && <PolicyOverlay onClose={() => setShowPrivacy(false)} />}
+          </>
         )}
-        {showPrivacy && <PolicyOverlay onClose={() => setShowPrivacy(false)} />}
 
         {err && <div className="tm-error">{err}</div>}
-        <button className="tm-btn tm-btn--primary" type="submit">Profil erstellen</button>
+        <button className="tm-btn tm-btn--primary" type="submit">{isEditing ? 'Änderungen speichern' : 'Profil erstellen'}</button>
       </form>
     </div>
   );
@@ -1001,6 +1031,9 @@ function DiscoverCard({ profile, myProfile, revealed, distanceKm, exitDirection,
             <>
               <div className="tm-fact-line"><span className="tm-fact-label">{staffQualificationLabel(profile.staffType)}</span><span>{profile.qualification}</span></div>
               <div className="tm-fact-line"><span className="tm-fact-label">Erfahrung</span><span>{profile.yearsExperience} Jahre</span></div>
+              {profile.staffType === 'physio' && profile.earliestAppointmentWeeks != null && (
+                <div className="tm-fact-line"><span className="tm-fact-label">Frühester Termin</span><span>in {profile.earliestAppointmentWeeks} Wochen</span></div>
+              )}
             </>
           )}
           {aeInfo && <AEBox aeInfo={aeInfo} title={aeTitle} />}
@@ -1186,7 +1219,7 @@ function ChatScreen({ matchId, partnerProfile, myId, onBack }) {
 
 /* ---------------------------- Profil-Tab ---------------------------- */
 
-function ProfileScreen({ profile, premiumDemo, onTogglePremium, onReset, onSignOut, onAddProfile, hasOtherProfiles }) {
+function ProfileScreen({ profile, premiumDemo, onTogglePremium, onReset, onSignOut, onAddProfile, onEditProfile, hasOtherProfiles }) {
   const [confirmReset, setConfirmReset] = useState(false);
   const [showPrivacy, setShowPrivacy] = useState(false);
   const isPlayer = profile.role === 'player';
@@ -1248,6 +1281,9 @@ function ProfileScreen({ profile, premiumDemo, onTogglePremium, onReset, onSignO
               <>
                 <div className="tm-fact-line"><span className="tm-fact-label">{staffQualificationLabel(profile.staffType)}</span><span>{profile.qualification}</span></div>
                 <div className="tm-fact-line"><span className="tm-fact-label">Erfahrung</span><span>{profile.yearsExperience} Jahre</span></div>
+                {profile.staffType === 'physio' && profile.earliestAppointmentWeeks != null && (
+                  <div className="tm-fact-line"><span className="tm-fact-label">Frühester Termin</span><span>in {profile.earliestAppointmentWeeks} Wochen</span></div>
+                )}
               </>
             )}
           </div>
@@ -1301,6 +1337,8 @@ function ProfileScreen({ profile, premiumDemo, onTogglePremium, onReset, onSignO
         und OpenStreetMap statt einer eigenen Google-Maps/Places-Anbindung.
       </div>
 
+      <button type="button" className="tm-link-btn" onClick={onEditProfile}>Profil bearbeiten</button>
+
       <button type="button" className="tm-link-btn" onClick={onAddProfile}><Plus size={13} style={{ display: 'inline', verticalAlign: '-2px' }} /> Weiteres Profil hinzufügen (z. B. zusätzlich als Trainer)</button>
 
       <button type="button" className="tm-link-btn" onClick={onSignOut}>Abmelden</button>
@@ -1335,31 +1373,45 @@ function AdminScreen() {
   const [likes, setLikes] = useState([]);
   const [matches, setMatches] = useState([]);
   const [messages, setMessages] = useState([]);
+  const [isCreatingProfile, setIsCreatingProfile] = useState(false);
+  const [creatingRole, setCreatingRole] = useState(null);
 
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      setLoading(true);
-      setError('');
-      try {
-        const [u, p, l, m, msg] = await Promise.all([
-          adminListUsers(), adminListAllProfiles(), adminListAllLikes(), adminListAllMatches(), adminListAllMessages(),
-        ]);
-        if (cancelled) return;
-        setUsers(u); setProfiles(p); setLikes(l); setMatches(m); setMessages(msg);
-      } catch (err) {
-        if (!cancelled) {
-          setError(
-            'Zugriff verweigert oder Fehler beim Laden. Prüfe, ob die Migrationen im SQL Editor ausgeführt wurden und deine E-Mail dort bei is_admin() hinterlegt ist.'
-            + (err?.message ? `\n\nTechnische Details: ${err.message}` : '')
-          );
-        }
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, []);
+  async function loadAdminData() {
+    setLoading(true);
+    setError('');
+    try {
+      const [u, p, l, m, msg] = await Promise.all([
+        adminListUsers(), adminListAllProfiles(), adminListAllLikes(), adminListAllMatches(), adminListAllMessages(),
+      ]);
+      setUsers(u); setProfiles(p); setLikes(l); setMatches(m); setMessages(msg);
+    } catch (err) {
+      setError(
+        'Zugriff verweigert oder Fehler beim Laden. Prüfe, ob die Migrationen im SQL Editor ausgeführt wurden und deine E-Mail dort bei is_admin() hinterlegt ist.'
+        + (err?.message ? `\n\nTechnische Details: ${err.message}` : '')
+      );
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => { loadAdminData(); }, []);
+
+  async function handleCreateTestProfile(fields) {
+    await adminCreateProfile(creatingRole, fields);
+    setCreatingRole(null);
+    setIsCreatingProfile(false);
+    loadAdminData();
+  }
+
+  /* Test-Vereine/-Spieler/-Staff anlegen, die an keinem echten Konto hängen
+     (user_id null - siehe adminCreateProfile in lib/api.js). Nutzt dieselben
+     Formulare wie die echte Registrierung. */
+  if (isCreatingProfile) {
+    if (!creatingRole) {
+      return <RoleSelect onSelect={setCreatingRole} onBack={() => setIsCreatingProfile(false)} />;
+    }
+    return <OnboardingForm role={creatingRole} onBack={() => setCreatingRole(null)} onSubmit={handleCreateTestProfile} />;
+  }
 
   if (loading) return <div className="tm-screen"><div className="tm-empty">Admin-Daten werden geladen …</div></div>;
   if (error) return <div className="tm-screen"><div className="tm-error" style={{ whiteSpace: 'pre-line' }}>{error}</div></div>;
@@ -1383,6 +1435,9 @@ function AdminScreen() {
   return (
     <div className="tm-screen">
       <h2 className="tm-h2">Admin</h2>
+      <button type="button" className="tm-btn" onClick={() => setIsCreatingProfile(true)}>
+        <Plus size={14} /> Testprofil anlegen (Verein/Spieler/Staff, ohne echtes Konto)
+      </button>
       <div className="tm-statchip-row">
         <StatChip label="Nutzer:innen" value={users.length} />
         <StatChip label="Profile" value={profiles.length} />
@@ -1593,17 +1648,65 @@ export default function App() {
     setScreen('addProfile');
   }
 
+  function handleEditProfile() {
+    setScreen('editProfile');
+  }
+
+  async function handleProfileEdit(fields) {
+    const updated = await updateProfile(profile.id, fields);
+    setProfiles(prev => prev.map(p => (p.id === updated.id ? updated : p)));
+    setScreen('profile');
+  }
+
+  /* Wer sieht wen im Entdecken-Deck:
+     - Verein <-> Spieler & Staff (alle Typen) - bestehend.
+     - Spieler <-> Physio/Masseur zusätzlich zu Vereinen, aber NUR wenn der/die
+       Spieler:in das im Profil angekreuzt hat (needsPhysio/needsMasseur), und
+       nur die passend gesuchte Staff-Art.
+     - Physio/Masseur <-> Spieler zusätzlich zu Vereinen, gespiegelt: nur
+       Spieler mit passendem Bedarf. */
+  function playerWantsStaff(playerProfile, staffProfile) {
+    if (staffProfile.role !== 'staff') return true;
+    if (staffProfile.staffType === 'physio') return Boolean(playerProfile.needsPhysio);
+    if (staffProfile.staffType === 'masseur') return Boolean(playerProfile.needsMasseur);
+    return false;
+  }
+  function staffWantsPlayer(staffProfile, playerProfile) {
+    if (staffProfile.staffType === 'physio') return Boolean(playerProfile.needsPhysio);
+    if (staffProfile.staffType === 'masseur') return Boolean(playerProfile.needsMasseur);
+    return false;
+  }
+
   async function loadDeck() {
     if (!profile) return;
     setDeckLoading(true);
-    const oppRoles = profile.role === 'club' ? ['player', 'staff'] : ['club'];
+
+    const isCarePlayer = profile.role === 'player' && (profile.needsPhysio || profile.needsMasseur);
+    const isCareStaff = profile.role === 'staff' && ['physio', 'masseur'].includes(profile.staffType);
+    const oppRoles = profile.role === 'club' ? ['player', 'staff']
+      : profile.role === 'player' ? (isCarePlayer ? ['club', 'staff'] : ['club'])
+      : ['club'];
 
     const [myLikes, myPasses] = await Promise.all([listMyLikes(profile.id), listMyPasses(profile.id)]);
     const exclude = new Set([...myLikes, ...myPasses, profile.id]);
 
-    const storageCandidates = await listCandidates(oppRoles, [...exclude]);
+    let storageCandidates = await listCandidates(oppRoles, [...exclude]);
     const demoPoolByRole = { player: demoPlayers, staff: demoStaff, club: demoClubs };
-    const demoPool = oppRoles.flatMap(r => demoPoolByRole[r]).filter(p => !exclude.has(p.id));
+    let demoPool = oppRoles.flatMap(r => demoPoolByRole[r]).filter(p => !exclude.has(p.id));
+
+    if (profile.role === 'player') {
+      storageCandidates = storageCandidates.filter(c => playerWantsStaff(profile, c));
+      demoPool = demoPool.filter(c => playerWantsStaff(profile, c));
+    }
+
+    if (isCareStaff) {
+      const [realPlayers, demoCarePlayers] = [
+        (await listCandidates(['player'], [...exclude])).filter(p => staffWantsPlayer(profile, p)),
+        demoPlayers.filter(p => !exclude.has(p.id) && staffWantsPlayer(profile, p)),
+      ];
+      storageCandidates = [...storageCandidates, ...realPlayers];
+      demoPool = [...demoPool, ...demoCarePlayers];
+    }
 
     const seenIds = new Set();
     const candidates = [];
@@ -1703,6 +1806,8 @@ export default function App() {
         ) : (
           <RoleSelect onSelect={setPendingRole} onBack={() => setScreen('profile')} />
         )
+      ) : screen === 'editProfile' ? (
+        <OnboardingForm role={profile.role} initialValues={profile} onBack={() => setScreen('profile')} onSubmit={handleProfileEdit} />
       ) : (
         <div className="tm-app">
           <TopBar
@@ -1722,7 +1827,8 @@ export default function App() {
             {screen === 'profile' && (
               <ProfileScreen
                 profile={profile} premiumDemo={premiumDemo} onTogglePremium={() => setPremiumDemo(v => !v)}
-                onReset={handleReset} onSignOut={handleSignOut} onAddProfile={handleAddProfile} hasOtherProfiles={profiles.length > 1}
+                onReset={handleReset} onSignOut={handleSignOut} onAddProfile={handleAddProfile} onEditProfile={handleEditProfile}
+                hasOtherProfiles={profiles.length > 1}
               />
             )}
             {screen === 'admin' && isAdmin && <AdminScreen />}
