@@ -425,14 +425,45 @@ function AEBox({ aeInfo, title }) {
 }
 
 /* Standortfeld: manuelle Auswahl + Live-GPS mit Adress-Rückwärtssuche (OpenStreetMap) */
-function LocationField({ value, onChange }) {
-  const [manualCity, setManualCity] = useState('');
-  const [geoStatus, setGeoStatus] = useState('idle'); // idle | loading | error
+/* Baut aus einer Nominatim-Adresse ein einheitliches "PLZ Ort"-Label (fällt auf
+   vorhandene Teile zurück, falls PLZ oder Ortsname fehlen). */
+function plzOrtLabel(address, fallback) {
+  const ort = address?.city || address?.town || address?.village || address?.municipality || address?.suburb;
+  const plz = address?.postcode;
+  if (plz && ort) return `${plz} ${ort}`;
+  return ort || fallback;
+}
 
-  function selectCity(cityName) {
-    setManualCity(cityName);
-    const coords = AUSTRIA_CITY_COORDS[cityName];
-    if (coords) onChange({ label: cityName, lat: coords[0], lng: coords[1] });
+/* Standort-Suche über die komplette Nominatim/OpenStreetMap-Datenbank, auf
+   Österreich eingeschränkt (countrycodes=at) - deckt jeden Ort/jede PLZ ab,
+   ohne alle ~2.100 österreichischen Gemeinden fix im Code zu hinterlegen. */
+function LocationField({ value, onChange }) {
+  const [query, setQuery] = useState(value?.label || '');
+  const [suggestions, setSuggestions] = useState([]);
+  const [searching, setSearching] = useState(false);
+  const [geoStatus, setGeoStatus] = useState('idle'); // idle | loading | error
+  const debounceRef = useRef(null);
+
+  function handleQueryChange(v) {
+    setQuery(v);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    if (v.trim().length < 2) { setSuggestions([]); return; }
+    debounceRef.current = setTimeout(async () => {
+      setSearching(true);
+      try {
+        const res = await fetch(`https://nominatim.openstreetmap.org/search?format=jsonv2&countrycodes=at&addressdetails=1&limit=8&q=${encodeURIComponent(v)}`);
+        const data = await res.json();
+        setSuggestions(data || []);
+      } catch (e) { setSuggestions([]); }
+      setSearching(false);
+    }, 400);
+  }
+
+  function selectSuggestion(item) {
+    const label = plzOrtLabel(item.address, item.display_name.split(',')[0]);
+    onChange({ label, lat: Number(item.lat), lng: Number(item.lon) });
+    setQuery(label);
+    setSuggestions([]);
   }
 
   function useLiveLocation() {
@@ -444,10 +475,11 @@ function LocationField({ value, onChange }) {
       try {
         const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${latitude}&lon=${longitude}`);
         const data = await res.json();
-        label = data?.address?.town || data?.address?.city || data?.address?.village || data?.address?.suburb || data?.display_name || label;
+        label = plzOrtLabel(data?.address, data?.display_name || label);
       } catch (e) { /* Adresse konnte nicht ermittelt werden, Koordinaten-Label bleibt */ }
       onChange({ label, lat: latitude, lng: longitude });
-      setManualCity('');
+      setQuery(label);
+      setSuggestions([]);
       setGeoStatus('idle');
     }, () => setGeoStatus('error'), { enableHighAccuracy: false, timeout: 8000 });
   }
@@ -455,16 +487,29 @@ function LocationField({ value, onChange }) {
   return (
     <div className="tm-location-field">
       <div className="tm-location-row">
-        <select className="tm-input" value={manualCity} onChange={e => selectCity(e.target.value)}>
-          <option value="">— Ort wählen —</option>
-          {AUSTRIA_CITIES.map(c => <option key={c} value={c}>{c}</option>)}
-        </select>
+        <div className="tm-location-search">
+          <input
+            className="tm-input" value={query} onChange={e => handleQueryChange(e.target.value)}
+            placeholder="PLZ oder Ort eingeben (z. B. 1010 Wien)"
+          />
+          {searching && <div className="tm-location-searching">Suche …</div>}
+          {suggestions.length > 0 && (
+            <div className="tm-location-suggestions">
+              {suggestions.map((s) => (
+                <button type="button" key={s.place_id} className="tm-location-suggestion" onClick={() => selectSuggestion(s)}>
+                  <span>{plzOrtLabel(s.address, s.display_name)}</span>
+                  <span className="tm-location-suggestion-sub">{s.display_name}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
         <button type="button" className="tm-geo-btn" onClick={useLiveLocation}>
           <LocateFixed size={14} /> {geoStatus === 'loading' ? 'Ermittle …' : 'Live-Standort'}
         </button>
       </div>
       {value?.label && <div className="tm-location-current">Ausgewählt: {value.label}</div>}
-      {geoStatus === 'error' && <div className="tm-error">Standort konnte nicht ermittelt werden. Bitte Ort manuell wählen.</div>}
+      {geoStatus === 'error' && <div className="tm-error">Standort konnte nicht ermittelt werden. Bitte Ort manuell suchen.</div>}
     </div>
   );
 }
@@ -643,7 +688,12 @@ function OnboardingForm({ role, onBack, onSubmit, initialValues }) {
   const isStaff = role === 'staff';
   const isClub = role === 'club';
   const isEditing = Boolean(initialValues);
-  const [name, setName] = useState(initialValues?.name || '');
+  const [firstName, setFirstName] = useState(
+    initialValues?.firstName || initialValues?.name?.trim().split(/\s+/).slice(0, -1).join(' ') || ''
+  );
+  const [lastName, setLastName] = useState(
+    initialValues?.lastName || initialValues?.name?.trim().split(/\s+/).slice(-1).join(' ') || ''
+  );
   const [birthDate, setBirthDate] = useState(initialValues?.birthDate || '');
   const [position, setPosition] = useState(initialValues?.position || '');
   const [secondaryPosition, setSecondaryPosition] = useState(initialValues?.secondaryPosition || '');
@@ -701,9 +751,10 @@ function OnboardingForm({ role, onBack, onSubmit, initialValues }) {
       if (!privacyConsent) { setErr('Bitte stimme der Datenschutzerklärung zu.'); return; }
       if (isMinor && !parentalConsent) { setErr('Bitte bestätige die Einwilligung deiner Erziehungsberechtigten.'); return; }
     }
+    const fullName = `${firstName.trim()} ${lastName.trim()}`.trim();
     if (isPlayer) {
-      if (!name.trim() || !birthDate || !position || !strongFoot || !location?.label || !leagueAdult || !startDate) {
-        setErr('Bitte fülle alle Pflichtfelder aus (inkl. Geburtsdatum, Beginn Fußballspielen und Standort).'); return;
+      if (!firstName.trim() || !lastName.trim() || !birthDate || !position || !strongFoot || !location?.label || !leagueAdult || !startDate) {
+        setErr('Bitte fülle alle Pflichtfelder aus (inkl. Vor-/Nachname, Geburtsdatum, Beginn Fußballspielen und Standort).'); return;
       }
       if (hasBreak && (!breakFrom || !breakTo || breakTo <= breakFrom)) {
         setErr('Bitte gib den Pause-Zeitraum korrekt an (bis muss nach von liegen).'); return;
@@ -711,7 +762,7 @@ function OnboardingForm({ role, onBack, onSubmit, initialValues }) {
       if (laz && !lazSince) { setErr('Bitte gib an, seit wann du im LAZ warst/bist.'); return; }
       if (academy && !academySince) { setErr('Bitte gib an, seit wann du in der Akademie warst/bist.'); return; }
       onSubmit({
-        name: name.trim(), birthDate, position, secondaryPosition, strongFoot, location, leagueAdult, statsAdult,
+        name: fullName, firstName: firstName.trim(), lastName: lastName.trim(), birthDate, position, secondaryPosition, strongFoot, location, leagueAdult, statsAdult,
         leagueYouth: hasYouth ? leagueYouth : '', statsYouth: hasYouth ? statsYouth : { einsaetze: 0, tore: 0, vorlagen: 0 },
         startDate, hasBreak, breakFrom: hasBreak ? breakFrom : '', breakTo: hasBreak ? breakTo : '',
         laz, lazSince: laz ? lazSince : '', lazUntil: laz ? lazUntil : '',
@@ -720,11 +771,11 @@ function OnboardingForm({ role, onBack, onSubmit, initialValues }) {
         privacyConsentAt: initialValues?.privacyConsentAt || Date.now(), parentalConsent: isMinor ? true : false,
       });
     } else if (isStaff) {
-      if (!name.trim() || !staffType || !qualification || !location?.label) {
-        setErr('Bitte fülle alle Pflichtfelder aus (inkl. Rolle, Qualifikation und Standort).'); return;
+      if (!firstName.trim() || !lastName.trim() || !staffType || !qualification || !location?.label) {
+        setErr('Bitte fülle alle Pflichtfelder aus (inkl. Vor-/Nachname, Rolle, Qualifikation und Standort).'); return;
       }
       onSubmit({
-        name: name.trim(), birthDate, staffType, qualification, yearsExperience, location,
+        name: fullName, firstName: firstName.trim(), lastName: lastName.trim(), birthDate, staffType, qualification, yearsExperience, location,
         earliestAppointmentWeeks: staffType === 'physio' && earliestAppointmentWeeks !== '' ? Number(earliestAppointmentWeeks) : undefined,
         privacyConsentAt: initialValues?.privacyConsentAt || Date.now(), parentalConsent: isMinor ? true : false,
       });
@@ -745,7 +796,10 @@ function OnboardingForm({ role, onBack, onSubmit, initialValues }) {
       <form className="tm-form" onSubmit={handleSubmit}>
         {isPlayer ? (
           <>
-            <label className="tm-label">Name<input className="tm-input" value={name} onChange={e => setName(e.target.value)} placeholder="Vor- und Nachname" /></label>
+            <div className="tm-date-row">
+              <label className="tm-label tm-label--small">Vorname<input className="tm-input" value={firstName} onChange={e => setFirstName(e.target.value)} placeholder="Vorname" /></label>
+              <label className="tm-label tm-label--small">Nachname<input className="tm-input" value={lastName} onChange={e => setLastName(e.target.value)} placeholder="Nachname" /></label>
+            </div>
             <label className="tm-label">Geburtsdatum<input className="tm-input" type="date" max={TODAY_ISO} value={birthDate} onChange={e => setBirthDate(e.target.value)} /></label>
             <label className="tm-label">Hauptposition
               <select className="tm-input" value={position} onChange={e => setPosition(e.target.value)}>
@@ -854,7 +908,10 @@ function OnboardingForm({ role, onBack, onSubmit, initialValues }) {
           </>
         ) : isStaff ? (
           <>
-            <label className="tm-label">Name<input className="tm-input" value={name} onChange={e => setName(e.target.value)} placeholder="Vor- und Nachname" /></label>
+            <div className="tm-date-row">
+              <label className="tm-label tm-label--small">Vorname<input className="tm-input" value={firstName} onChange={e => setFirstName(e.target.value)} placeholder="Vorname" /></label>
+              <label className="tm-label tm-label--small">Nachname<input className="tm-input" value={lastName} onChange={e => setLastName(e.target.value)} placeholder="Nachname" /></label>
+            </div>
             <label className="tm-label">Geburtsdatum (optional)<input className="tm-input" type="date" max={TODAY_ISO} value={birthDate} onChange={e => setBirthDate(e.target.value)} /></label>
             <label className="tm-label">Rolle
               <select className="tm-input" value={staffType} onChange={e => { setStaffType(e.target.value); setQualification(''); }}>
@@ -2011,7 +2068,19 @@ const CSS = `
 
 .tm-location-field { display: flex; flex-direction: column; gap: 6px; }
 .tm-location-row { display: flex; gap: 8px; }
-.tm-location-row .tm-input { flex: 1; }
+.tm-location-search { flex: 1; position: relative; }
+.tm-location-search .tm-input { width: 100%; }
+.tm-location-searching { position: absolute; top: calc(100% + 4px); left: 0; font-size: 11px; color: var(--chalk-dim); }
+.tm-location-suggestions {
+  position: absolute; top: calc(100% + 4px); left: 0; right: 0; background: var(--pitch-night); border: 1px solid var(--line);
+  border-radius: 9px; padding: 4px; z-index: 30; max-height: 260px; overflow-y: auto; box-shadow: 0 12px 24px -8px rgba(0,0,0,0.6);
+}
+.tm-location-suggestion {
+  display: flex; flex-direction: column; gap: 1px; width: 100%; background: none; border: none; text-align: left;
+  color: var(--chalk); font-size: 12.5px; padding: 7px 9px; border-radius: 7px; cursor: pointer;
+}
+.tm-location-suggestion:hover { background: rgba(237,237,226,0.06); }
+.tm-location-suggestion-sub { font-size: 10.5px; color: var(--chalk-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tm-geo-btn { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; background: var(--pitch-night); border: 1px solid var(--floodlight); color: var(--floodlight); border-radius: 9px; padding: 0 12px; font-size: 12px; cursor: pointer; }
 .tm-location-current { font-size: 12px; color: var(--chalk-dim); }
 .tm-maps-link { display: inline-flex; align-items: center; gap: 5px; margin-top: 10px; font-size: 12.5px; color: var(--floodlight); text-decoration: none; }
