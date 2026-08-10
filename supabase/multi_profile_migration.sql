@@ -14,8 +14,13 @@ alter table public.profiles add column if not exists user_id uuid;
 update public.profiles set user_id = id where user_id is null;
 alter table public.profiles alter column user_id set not null;
 
-alter table public.profiles add constraint profiles_user_id_fkey
-  foreign key (user_id) references auth.users(id) on delete cascade;
+do $$
+begin
+  alter table public.profiles add constraint profiles_user_id_fkey
+    foreign key (user_id) references auth.users(id) on delete cascade;
+exception when duplicate_object then
+  null;
+end $$;
 
 alter table public.profiles drop constraint if exists profiles_id_fkey;
 alter table public.profiles alter column id set default gen_random_uuid();
@@ -50,7 +55,9 @@ create policy "profiles_delete_own"
 -- direkt aus adminListAllProfiles() (gejoint über user_id), diese Funktion
 -- liefert nur noch die reinen Auth-Konten.
 -- ----------------------------------------------------------------------------
-create or replace function public.admin_list_users()
+drop function if exists public.admin_list_users();
+
+create function public.admin_list_users()
 returns table (id uuid, email text, created_at timestamptz)
 language plpgsql
 security definer
