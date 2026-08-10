@@ -1,0 +1,15 @@
+{
+  "name": "WECHSEL. – Transfer-Matching für den Amateurfußball",
+  "short_name": "WECHSEL.",
+  "description": "Transfers im Amateurfußball anonym anbahnen, erst beim Match Klartext reden.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#10161A",
+  "theme_color": "#10161A",
+  "orientation": "portrait",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}
