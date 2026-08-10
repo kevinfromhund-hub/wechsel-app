@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Heart, X, MessageCircle, User, Lock, MapPin, RotateCcw, Send, ChevronLeft, ShieldCheck, Sparkles, Search, Users, Euro, LocateFixed, GraduationCap, ExternalLink, Mail, ShieldAlert, Award, Briefcase, Stethoscope, ChevronDown, Plus } from 'lucide-react';
+import { Heart, X, MessageCircle, User, Lock, MapPin, RotateCcw, Send, ChevronLeft, ShieldCheck, Sparkles, Search, Users, Euro, LocateFixed, GraduationCap, ExternalLink, Mail, ShieldAlert, Award, Briefcase, Stethoscope, ChevronDown, Plus, LogOut } from 'lucide-react';
 import { supabase, isSupabaseConfigured } from './supabaseClient';
 import {
   listMyProfiles, createProfile, updateProfile, deleteProfile, listCandidates, listMyLikes, listMyPasses,
@@ -1398,7 +1398,7 @@ function ProfileScreen({ profile, premiumDemo, onTogglePremium, onReset, onSignO
 
       <button type="button" className="tm-link-btn" onClick={onAddProfile}><Plus size={13} style={{ display: 'inline', verticalAlign: '-2px' }} /> Weiteres Profil hinzufügen (z. B. zusätzlich als Trainer)</button>
 
-      <button type="button" className="tm-link-btn" onClick={onSignOut}>Abmelden</button>
+      <button type="button" className="tm-btn" onClick={onSignOut}><LogOut size={14} /> Abmelden</button>
 
       {!confirmReset ? (
         <button className="tm-btn tm-btn--danger" onClick={() => setConfirmReset(true)}>
