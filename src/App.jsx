@@ -1348,7 +1348,12 @@ function AdminScreen() {
         if (cancelled) return;
         setUsers(u); setProfiles(p); setLikes(l); setMatches(m); setMessages(msg);
       } catch (err) {
-        if (!cancelled) setError('Zugriff verweigert oder Fehler beim Laden. Prüfe, ob supabase/admin_migration.sql im SQL Editor ausgeführt wurde und deine E-Mail dort bei is_admin() hinterlegt ist.');
+        if (!cancelled) {
+          setError(
+            'Zugriff verweigert oder Fehler beim Laden. Prüfe, ob die Migrationen im SQL Editor ausgeführt wurden und deine E-Mail dort bei is_admin() hinterlegt ist.'
+            + (err?.message ? `\n\nTechnische Details: ${err.message}` : '')
+          );
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -1357,7 +1362,7 @@ function AdminScreen() {
   }, []);
 
   if (loading) return <div className="tm-screen"><div className="tm-empty">Admin-Daten werden geladen …</div></div>;
-  if (error) return <div className="tm-screen"><div className="tm-error">{error}</div></div>;
+  if (error) return <div className="tm-screen"><div className="tm-error" style={{ whiteSpace: 'pre-line' }}>{error}</div></div>;
 
   const userById = new Map(users.map(u => [u.id, u]));
   const roleLabelOf = (p) => {
