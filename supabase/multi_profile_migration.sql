@@ -73,3 +73,9 @@ begin
     order by u.created_at desc;
 end;
 $$;
+
+-- DROP FUNCTION entfernt auch alle zuvor erteilten Rechte (anders als
+-- CREATE OR REPLACE) - daher muss authenticated hier erneut Ausführrechte
+-- bekommen, sonst schlägt der RPC-Aufruf aus der App mit "permission
+-- denied" fehl (zeigt sich dort als "Zugriff verweigert").
+grant execute on function public.admin_list_users() to authenticated;
