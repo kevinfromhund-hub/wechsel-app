@@ -68,7 +68,10 @@ begin
     raise exception 'not authorized';
   end if;
   return query
-    select u.id, u.email, u.created_at
+    -- Explizite Casts, da auth.users.email z. B. "varchar" statt "text" ist -
+    -- ohne Cast meldet Postgres "structure of query does not match function
+    -- result type".
+    select u.id, u.email::text, u.created_at::timestamptz
     from auth.users u
     order by u.created_at desc;
 end;
