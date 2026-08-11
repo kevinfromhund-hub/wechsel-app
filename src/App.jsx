@@ -96,6 +96,12 @@ function levelForLeague(label) {
   const found = AUSTRIA_LEAGUES.find(l => l.label === label);
   return found ? found.level : 7;
 }
+/* Welche der beiden Vereins-Ligen (Herren/Damen) für die AE-Berechnung
+   zählt, hängt vom Geschlecht der Spielerin/des Spielers ab. */
+function clubLeagueForGender(clubProfile, gender) {
+  if (gender === 'weiblich') return clubProfile.leagueWomen || clubProfile.league;
+  return clubProfile.league || clubProfile.leagueWomen;
+}
 
 const LEAGUES_YOUTH = ['Landesliga (Nachwuchs)', 'Regionalliga (Nachwuchs)', 'ÖFB-Nachwuchsbundesliga'];
 const FEET = ['rechts', 'links', 'beidfüßig'];
@@ -291,16 +297,18 @@ function generateDemoClub(index, sessionSeed) {
   }
   const searchedStaffTypes = randBool(0.4) ? [randChoice(STAFF_TYPES).code] : [];
   const clubName = `${randChoice(DEMO_CLUB_PREFIX)} ${randChoice(DEMO_CLUB_COLOR)} ${randChoice(DEMO_CLUB_PLACE)}${randBool(0.4) ? ' ' + randChoice(['04', '09', '1919', '1921', '46']) : ''}`;
+  const searchedGender = randChoice(['männlich', 'weiblich', 'alle', 'alle']);
   return {
     id: `seed-${sessionSeed}-club-${index}`,
     role: 'club',
     clubName,
     contactPerson: `${randChoice(DEMO_FIRST_NAMES)} ${randChoice(DEMO_LAST_NAMES)}`,
     location: { label: cityName, lat: coords[0], lng: coords[1] },
-    league: randChoice(AUSTRIA_LEAGUE_LABELS),
+    league: searchedGender !== 'weiblich' ? randChoice(AUSTRIA_LEAGUE_LABELS) : '',
+    leagueWomen: searchedGender !== 'männlich' ? randChoice(AUSTRIA_LEAGUE_LABELS) : '',
     searchedPositions,
     searchedStaffTypes,
-    searchedGender: randChoice(['männlich', 'weiblich', 'alle', 'alle']),
+    searchedGender,
     createdAt: 1,
   };
 }
@@ -361,7 +369,7 @@ function applyFilters(candidates, myProfile, filters) {
         if (filters.positions.length > 0 && !filters.positions.includes(c.position) && !filters.positions.includes(c.secondaryPosition)) return false;
         if (filters.strongFoot && c.strongFoot !== filters.strongFoot) return false;
         if (filters.aeFilter !== 'alle') {
-          const ae = calcAusbildungsentschaedigung(c, levelForLeague(myProfile.league));
+          const ae = calcAusbildungsentschaedigung(c, levelForLeague(clubLeagueForGender(myProfile, c.gender)));
           const hasAE = !ae.zeroReason && ae.total > 0;
           if (filters.aeFilter === 'ja' && !hasAE) return false;
           if (filters.aeFilter === 'nein' && hasAE) return false;
@@ -866,6 +874,7 @@ function OnboardingForm({ role, onBack, onSubmit, initialValues }) {
   const [clubName, setClubName] = useState(initialValues?.clubName || '');
   const [contactPerson, setContactPerson] = useState(initialValues?.contactPerson || '');
   const [league, setLeague] = useState(initialValues?.league || '');
+  const [leagueWomen, setLeagueWomen] = useState(initialValues?.leagueWomen || '');
   const [searchedPositions, setSearchedPositions] = useState(initialValues?.searchedPositions || []);
   const [searchedStaffTypes, setSearchedStaffTypes] = useState(initialValues?.searchedStaffTypes || []);
   const [searchedGender, setSearchedGender] = useState(initialValues?.searchedGender || '');
@@ -930,10 +939,20 @@ function OnboardingForm({ role, onBack, onSubmit, initialValues }) {
         privacyConsentAt: initialValues?.privacyConsentAt || Date.now(), parentalConsent: isMinor ? true : false,
       });
     } else {
-      if (!clubName.trim() || !location?.label || !league || !searchedGender || (searchedPositions.length === 0 && searchedStaffTypes.length === 0)) {
-        setErr('Bitte fülle alle Pflichtfelder aus (inkl. gesuchtem Geschlecht) und wähle mind. eine gesuchte Position oder Staff-Rolle.'); return;
+      const needsMenLeague = searchedGender === 'männlich' || searchedGender === 'alle';
+      const needsWomenLeague = searchedGender === 'weiblich' || searchedGender === 'alle';
+      if (
+        !clubName.trim() || !location?.label || !searchedGender
+        || (needsMenLeague && !league) || (needsWomenLeague && !leagueWomen)
+        || (searchedPositions.length === 0 && searchedStaffTypes.length === 0)
+      ) {
+        setErr('Bitte fülle alle Pflichtfelder aus (inkl. gesuchtem Geschlecht und der passenden Liga) und wähle mind. eine gesuchte Position oder Staff-Rolle.'); return;
       }
-      onSubmit({ clubName: clubName.trim(), contactPerson: contactPerson.trim(), location, league, searchedPositions, searchedStaffTypes, searchedGender, privacyConsentAt: initialValues?.privacyConsentAt || Date.now() });
+      onSubmit({
+        clubName: clubName.trim(), contactPerson: contactPerson.trim(), location,
+        league: needsMenLeague ? league : '', leagueWomen: needsWomenLeague ? leagueWomen : '',
+        searchedPositions, searchedStaffTypes, searchedGender, privacyConsentAt: initialValues?.privacyConsentAt || Date.now(),
+      });
     }
   }
 
@@ -1104,12 +1123,6 @@ function OnboardingForm({ role, onBack, onSubmit, initialValues }) {
             <label className="tm-label">Vereinsname<input className="tm-input" value={clubName} onChange={e => setClubName(e.target.value)} placeholder="z. B. SV Musterstadt" /></label>
             <label className="tm-label">Ansprechpartner<input className="tm-input" value={contactPerson} onChange={e => setContactPerson(e.target.value)} placeholder="Name, z. B. Trainer/Sportlicher Leiter" /></label>
             <div className="tm-label">Standort<LocationField value={location} onChange={setLocation} /></div>
-            <label className="tm-label">Liga / Spielklasse der Mannschaft
-              <select className="tm-input" value={league} onChange={e => setLeague(e.target.value)}>
-                <option value="">— wählen —</option>
-                {AUSTRIA_LEAGUE_LABELS.map(l => <option key={l} value={l}>{l}</option>)}
-              </select>
-            </label>
             <div className="tm-label">Gesuchtes Geschlecht
               <div className="tm-gender-row">
                 <button type="button" className={'tm-gender-btn' + (searchedGender === 'männlich' ? ' tm-gender-btn--active' : '')} onClick={() => setSearchedGender('männlich')}>♂ Männlich</button>
@@ -1117,6 +1130,22 @@ function OnboardingForm({ role, onBack, onSubmit, initialValues }) {
                 <button type="button" className={'tm-gender-btn' + (searchedGender === 'alle' ? ' tm-gender-btn--active' : '')} onClick={() => setSearchedGender('alle')}>Alle</button>
               </div>
             </div>
+            {(searchedGender === 'männlich' || searchedGender === 'alle') && (
+              <label className="tm-label">Liga / Spielklasse der Herren-Mannschaft
+                <select className="tm-input" value={league} onChange={e => setLeague(e.target.value)}>
+                  <option value="">— wählen —</option>
+                  {AUSTRIA_LEAGUE_LABELS.map(l => <option key={l} value={l}>{l}</option>)}
+                </select>
+              </label>
+            )}
+            {(searchedGender === 'weiblich' || searchedGender === 'alle') && (
+              <label className="tm-label">Liga / Spielklasse der Damen-Mannschaft
+                <select className="tm-input" value={leagueWomen} onChange={e => setLeagueWomen(e.target.value)}>
+                  <option value="">— wählen —</option>
+                  {AUSTRIA_LEAGUE_LABELS.map(l => <option key={l} value={l}>{l}</option>)}
+                </select>
+              </label>
+            )}
             <div className="tm-fieldset-title">Gesuchte Position(en)</div>
             <div className="tm-checkbox-grid">
               <label className={'tm-pos-check' + (searchedPositions.length === POSITIONS.length ? ' tm-pos-check--active' : '')}>
@@ -1191,10 +1220,10 @@ function DiscoverCard({ profile, myProfile, revealed, distanceKm, exitDirection,
      Zweig, sonst würde sie fälschlich auch bei Staff-Profilen greifen. */
   let aeInfo = null, aeTitle = '';
   if (isPlayerCard && myProfile.role === 'club') {
-    aeInfo = calcAusbildungsentschaedigung(profile, levelForLeague(myProfile.league));
+    aeInfo = calcAusbildungsentschaedigung(profile, levelForLeague(clubLeagueForGender(myProfile, profile.gender)));
     aeTitle = 'Errechnet: Gesamtkosten für eure Leistungsstufe';
   } else if (isClubCard && myProfile.role === 'player') {
-    aeInfo = calcAusbildungsentschaedigung(myProfile, levelForLeague(profile.league));
+    aeInfo = calcAusbildungsentschaedigung(myProfile, levelForLeague(clubLeagueForGender(profile, myProfile.gender)));
     aeTitle = 'Das müsste dieser Verein für dich zahlen';
   }
 
@@ -1253,7 +1282,8 @@ function DiscoverCard({ profile, myProfile, revealed, distanceKm, exitDirection,
               {profile.searchedPositions?.length > 0 && (
                 <div className="tm-fact-line"><span className="tm-fact-label">Gesuchte Position(en)</span><span>{profile.searchedPositions.join(', ')}</span></div>
               )}
-              <div className="tm-fact-line"><span className="tm-fact-label">Liga</span><span>{profile.league}</span></div>
+              {profile.league && <div className="tm-fact-line"><span className="tm-fact-label">Liga (Herren)</span><span>{profile.league}</span></div>}
+              {profile.leagueWomen && <div className="tm-fact-line"><span className="tm-fact-label">Liga (Damen)</span><span>{profile.leagueWomen}</span></div>}
               {profile.searchedStaffTypes?.length > 0 && (
                 <div className="tm-fact-line"><span className="tm-fact-label">Gesuchte Staff-Rollen</span><span>{profile.searchedStaffTypes.map(c => staffTypeByCode(c)?.label).join(', ')}</span></div>
               )}
@@ -1288,7 +1318,7 @@ function FilterPanel({ myProfile, filters, onFiltersChange, onClose }) {
 
   return (
     <div className="tm-overlay" onClick={onClose}>
-      <div className="tm-overlay-card tm-overlay-card--scroll" onClick={e => e.stopPropagation()}>
+      <div className="tm-overlay-card tm-overlay-card--scroll tm-overlay-card--dark" onClick={e => e.stopPropagation()}>
         <div className="tm-h2">Filter</div>
 
         <div className="tm-fieldset-title">Entfernung</div>
@@ -1607,7 +1637,8 @@ function ProfileScreen({ profile, premiumDemo, onTogglePremium, onReset, onSignO
                 {profile.searchedPositions?.length > 0 && (
                   <div className="tm-fact-line"><span className="tm-fact-label">Gesuchte Position(en)</span><span>{profile.searchedPositions.join(', ')}</span></div>
                 )}
-                <div className="tm-fact-line"><span className="tm-fact-label">Liga</span><span>{profile.league}</span></div>
+                {profile.league && <div className="tm-fact-line"><span className="tm-fact-label">Liga (Herren)</span><span>{profile.league}</span></div>}
+              {profile.leagueWomen && <div className="tm-fact-line"><span className="tm-fact-label">Liga (Damen)</span><span>{profile.leagueWomen}</span></div>}
                 {profile.searchedStaffTypes?.length > 0 && (
                   <div className="tm-fact-line"><span className="tm-fact-label">Gesuchte Staff-Rollen</span><span>{profile.searchedStaffTypes.map(c => staffTypeByCode(c)?.label).join(', ')}</span></div>
                 )}
@@ -2472,6 +2503,8 @@ const CSS = `
 .tm-overlay { position: fixed; inset: 0; background: rgba(16,22,26,0.82); display: flex; align-items: center; justify-content: center; z-index: 50; padding: 20px; }
 .tm-overlay-card { background: var(--manila); color: var(--ink); border-radius: 18px; padding: 30px 26px; max-width: 320px; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 8px; }
 .tm-overlay-card--scroll { max-width: 400px; max-height: 80vh; text-align: left; align-items: stretch; }
+.tm-overlay-card--dark { background: var(--pitch-night); color: var(--chalk); border: 1px solid var(--line); }
+.tm-overlay-card--dark .tm-h2 { color: var(--chalk); }
 .tm-policy-text { overflow-y: auto; max-height: 60vh; font-size: 12.5px; line-height: 1.55; color: var(--ink-dim); padding-right: 4px; }
 .tm-policy-text p { margin: 0 0 12px; }
 .tm-link-btn { background: none; border: none; color: var(--floodlight); font-size: 12.5px; text-decoration: underline; cursor: pointer; padding: 2px 0; text-align: left; align-self: flex-start; }
