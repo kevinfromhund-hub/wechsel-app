@@ -96,12 +96,6 @@ function levelForLeague(label) {
   const found = AUSTRIA_LEAGUES.find(l => l.label === label);
   return found ? found.level : 7;
 }
-/* Welche der beiden Vereins-Ligen (Herren/Damen) für die AE-Berechnung
-   zählt, hängt vom Geschlecht der Spielerin/des Spielers ab. */
-function clubLeagueForGender(clubProfile, gender) {
-  if (gender === 'weiblich') return clubProfile.leagueWomen || clubProfile.league;
-  return clubProfile.league || clubProfile.leagueWomen;
-}
 
 const LEAGUES_YOUTH = ['Landesliga (Nachwuchs)', 'Regionalliga (Nachwuchs)', 'ÖFB-Nachwuchsbundesliga'];
 const FEET = ['rechts', 'links', 'beidfüßig'];
@@ -369,7 +363,7 @@ function applyFilters(candidates, myProfile, filters) {
         if (filters.positions.length > 0 && !filters.positions.includes(c.position) && !filters.positions.includes(c.secondaryPosition)) return false;
         if (filters.strongFoot && c.strongFoot !== filters.strongFoot) return false;
         if (filters.aeFilter !== 'alle') {
-          const ae = calcAusbildungsentschaedigung(c, levelForLeague(clubLeagueForGender(myProfile, c.gender)));
+          const ae = calcAusbildungsentschaedigung(c, levelForLeague(myProfile.league));
           const hasAE = !ae.zeroReason && ae.total > 0;
           if (filters.aeFilter === 'ja' && !hasAE) return false;
           if (filters.aeFilter === 'nein' && hasAE) return false;
@@ -1220,10 +1214,10 @@ function DiscoverCard({ profile, myProfile, revealed, distanceKm, exitDirection,
      Zweig, sonst würde sie fälschlich auch bei Staff-Profilen greifen. */
   let aeInfo = null, aeTitle = '';
   if (isPlayerCard && myProfile.role === 'club') {
-    aeInfo = calcAusbildungsentschaedigung(profile, levelForLeague(clubLeagueForGender(myProfile, profile.gender)));
+    aeInfo = calcAusbildungsentschaedigung(profile, levelForLeague(myProfile.league));
     aeTitle = 'Errechnet: Gesamtkosten für eure Leistungsstufe';
   } else if (isClubCard && myProfile.role === 'player') {
-    aeInfo = calcAusbildungsentschaedigung(myProfile, levelForLeague(clubLeagueForGender(profile, myProfile.gender)));
+    aeInfo = calcAusbildungsentschaedigung(myProfile, levelForLeague(profile.league));
     aeTitle = 'Das müsste dieser Verein für dich zahlen';
   }
 
