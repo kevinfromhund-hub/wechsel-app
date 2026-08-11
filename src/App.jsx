@@ -76,24 +76,19 @@ const POSITIONS = [
 const posByCode = (code) => POSITIONS.find(p => p.code === code);
 
 /* Vereinfachte 7-stufige österreichische Leistungsstufen-Einteilung (Bezeichnungen
-   variieren je Landesverband leicht – hier zusammengefasst für Auswahl & Berechnung). */
-/* Vereinfachte österreichische Leistungsstufen-Einteilung, angelehnt an die 7
-   offiziellen Leistungsstufen des ÖFB-Regulativs (Anhang I). Da es mehr
-   gebräuchliche Liga-Namen als offizielle Stufen gibt (Bezeichnungen variieren
-   je Landesverband: Gebietsliga/Unterliga/Bezirksliga sind vielerorts
-   dieselbe Ebene; 1. und 2. Landesliga liegen meist auf derselben Ebene,
-   z. B. als Ost-/West-Gruppen), teilen sich manche Namen dieselbe Stufe –
-   das entspricht auch der Realität, dass die 7 Stufen ganz Österreich
-   abdecken müssen. Für die Berechnung der Ausbildungsentschädigung zählt
+   variieren je Landesverband leicht – hier zusammengefasst für Auswahl & Berechnung).
+   1. und 2. Landesliga liegen bewusst auf getrennten Stufen (Faktor 1,0 bzw. 0,8);
+   1. Klasse und 2. Klasse/darunter teilen sich dagegen bewusst dieselbe unterste
+   Stufe (Faktor 0,4). Für die Berechnung der Ausbildungsentschädigung zählt
    ausschließlich die Stufe ("level"), nicht der genaue Name. */
 const AUSTRIA_LEAGUES = [
   { label: 'Bundesliga', level: 1 },
   { label: '2. Liga', level: 2 },
   { label: 'Regionalliga', level: 3 },
   { label: '1. Landesliga', level: 4 },
-  { label: '2. Landesliga', level: 4 },
-  { label: 'Gebietsliga / Unterliga / Bezirksliga', level: 5 },
-  { label: '1. Klasse', level: 6 },
+  { label: '2. Landesliga', level: 5 },
+  { label: 'Gebietsliga / Unterliga / Bezirksliga', level: 6 },
+  { label: '1. Klasse', level: 7 },
   { label: '2. Klasse und darunter', level: 7 },
 ];
 const AUSTRIA_LEAGUE_LABELS = AUSTRIA_LEAGUES.map(l => l.label);
