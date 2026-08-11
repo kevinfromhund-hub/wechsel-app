@@ -887,6 +887,9 @@ function OnboardingForm({ role, onBack, onSubmit, initialValues }) {
   function toggleSearchedPosition(code) {
     setSearchedPositions(prev => prev.includes(code) ? prev.filter(c => c !== code) : [...prev, code]);
   }
+  function toggleAllSearchedPositions() {
+    setSearchedPositions(prev => (prev.length === POSITIONS.length ? [] : POSITIONS.map(p => p.code)));
+  }
   function toggleSearchedStaffType(code) {
     setSearchedStaffTypes(prev => prev.includes(code) ? prev.filter(c => c !== code) : [...prev, code]);
   }
@@ -1116,6 +1119,10 @@ function OnboardingForm({ role, onBack, onSubmit, initialValues }) {
             </div>
             <div className="tm-fieldset-title">Gesuchte Position(en)</div>
             <div className="tm-checkbox-grid">
+              <label className={'tm-pos-check' + (searchedPositions.length === POSITIONS.length ? ' tm-pos-check--active' : '')}>
+                <input type="checkbox" checked={searchedPositions.length === POSITIONS.length} onChange={toggleAllSearchedPositions} />
+                Alle
+              </label>
               {POSITIONS.map(p => (
                 <label key={p.code} className={'tm-pos-check' + (searchedPositions.includes(p.code) ? ' tm-pos-check--active' : '')}>
                   <input type="checkbox" checked={searchedPositions.includes(p.code)} onChange={() => toggleSearchedPosition(p.code)} />
