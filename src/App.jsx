@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Heart, X, MessageCircle, User, Lock, MapPin, RotateCcw, Send, ChevronLeft, ShieldCheck, Sparkles, Search, Users, Euro, LocateFixed, GraduationCap, ExternalLink, Mail, ShieldAlert, Award, Briefcase, Stethoscope, ChevronDown, Plus, LogOut, ArrowRight } from 'lucide-react';
+import { Heart, X, MessageCircle, User, Lock, MapPin, RotateCcw, Send, ChevronLeft, ShieldCheck, Sparkles, Search, Users, Euro, LocateFixed, GraduationCap, ExternalLink, Mail, ShieldAlert, Award, Briefcase, Stethoscope, ChevronDown, Plus, LogOut, ArrowRight, SlidersHorizontal } from 'lucide-react';
 import { supabase, isSupabaseConfigured } from './supabaseClient';
 import {
   listMyProfiles, createProfile, updateProfile, deleteProfile, listCandidates, listMyLikes, listMyPasses,
@@ -191,6 +191,12 @@ function calcAusbildungsentschaedigung(player, receivingLevel) {
     if (monthsBetween(player.breakFrom, player.breakTo) >= 18) { result.zeroReason = 'break'; return result; }
   }
   const factor = AE_LEVEL_FACTOR[Math.min(Math.max(receivingLevel || 7, 1), 7)] || 0.4;
+  /* Schätzung: bei weiblichen Spielerinnen wird die Ausbildungsentschädigung
+     hier um 50% reduziert angesetzt (geringere Bewerbs-/Fördersätze im
+     Mädchen-/Frauenfußball) - keine offizielle ÖFB-Regel, sondern eine
+     bewusste Vereinfachung dieses Prototyps, analog zur restlichen
+     AE-Berechnung, die ohnehin nur eine Schätzung ist. */
+  const genderFactor = player.gender === 'weiblich' ? 0.5 : 1;
   const startAge = player.startDate ? Math.max(calcAge(player.birthDate, player.startDate), 9) : 9;
   for (let lj = 9; lj <= 23; lj++) {
     if (lj < startAge || lj > age) continue;
@@ -200,7 +206,7 @@ function calcAusbildungsentschaedigung(player, receivingLevel) {
     let bonus = 0, tags = [];
     if (player.academy && rangeCoversYear(year, player.academySince, player.academyUntil)) { bonus += 1600; tags.push('Akademie'); }
     if (player.laz && rangeCoversYear(year, player.lazSince, player.lazUntil)) { bonus += 700; tags.push('LAZ'); }
-    const yearTotal = Math.round((base + bonus) * factor);
+    const yearTotal = Math.round((base + bonus) * factor * genderFactor);
     result.breakdown.push({ lebensjahr: lj, base, bonus, tags, yearTotal });
     result.total += yearTotal;
   }
@@ -274,6 +280,7 @@ function generateDemoPlayer(index, sessionSeed) {
     startDate, hasBreak, breakFrom, breakTo, laz, lazSince, lazUntil, academy, academySince, academyUntil,
     selfNoCompensationClaim: randBool(0.15),
     needsPhysio: randBool(0.2), needsMasseur: randBool(0.2),
+    gender: randChoice(['männlich', 'weiblich']),
     createdAt: 1,
   };
 }
@@ -298,6 +305,7 @@ function generateDemoClub(index, sessionSeed) {
     league: randChoice(AUSTRIA_LEAGUE_LABELS),
     searchedPositions,
     searchedStaffTypes,
+    searchedGender: randChoice(['männlich', 'weiblich', 'alle', 'alle']),
     createdAt: 1,
   };
 }
@@ -316,6 +324,7 @@ function generateDemoStaffPerson(index, sessionSeed) {
     yearsExperience: randInt(1, 20),
     qualification: randChoice(staffQualificationOptions(staffType)),
     earliestAppointmentWeeks: staffType === 'physio' ? randInt(1, 8) : undefined,
+    highestLeague: staffType === 'trainer' ? randChoice(AUSTRIA_LEAGUE_LABELS) : undefined,
     createdAt: 1,
   };
 }
@@ -335,6 +344,45 @@ function haversineKm(a, b) {
   const s = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon / 2) ** 2;
   return R * 2 * Math.atan2(Math.sqrt(s), Math.sqrt(1 - s));
 }
+/* ---------------------------- Entdecken-Filter ---------------------------- */
+
+const DISTANCE_STEPS_KM = Array.from({ length: 15 }, (_, i) => (i + 1) * 10); // 10..150
+const DEFAULT_FILTERS = { maxDistanceKm: null, positions: [], strongFoot: '', aeFilter: 'alle', leagueLevels: [] };
+function hasActiveFilters(filters) {
+  return Boolean(filters.maxDistanceKm) || filters.positions.length > 0 || Boolean(filters.strongFoot)
+    || filters.aeFilter !== 'alle' || filters.leagueLevels.length > 0;
+}
+
+/* Wendet die Ad-hoc-Filter aus dem Filter-Panel an. Kandidaten, auf die ein
+   Filter thematisch nicht zutrifft (z. B. Position bei einem Verein-Kandidaten
+   in der Spieler-Ansicht), bleiben davon unberührt statt ausgeschlossen zu
+   werden. */
+function applyFilters(candidates, myProfile, filters) {
+  return candidates.filter(c => {
+    if (filters.maxDistanceKm != null && c._dist != null && c._dist > filters.maxDistanceKm) return false;
+
+    if (myProfile.role === 'club') {
+      if (c.role === 'player') {
+        if (filters.positions.length > 0 && !filters.positions.includes(c.position) && !filters.positions.includes(c.secondaryPosition)) return false;
+        if (filters.strongFoot && c.strongFoot !== filters.strongFoot) return false;
+        if (filters.aeFilter !== 'alle') {
+          const ae = calcAusbildungsentschaedigung(c, levelForLeague(myProfile.league));
+          const hasAE = !ae.zeroReason && ae.total > 0;
+          if (filters.aeFilter === 'ja' && !hasAE) return false;
+          if (filters.aeFilter === 'nein' && hasAE) return false;
+        }
+        if (filters.leagueLevels.length > 0 && !filters.leagueLevels.includes(c.leagueAdult)) return false;
+      } else if (c.role === 'staff' && c.staffType === 'trainer') {
+        if (filters.leagueLevels.length > 0 && !filters.leagueLevels.includes(c.highestLeague)) return false;
+      }
+    } else if (myProfile.role === 'player' && c.role === 'club') {
+      if (filters.leagueLevels.length > 0 && !filters.leagueLevels.includes(c.league)) return false;
+      if (filters.positions.length > 0 && !(c.searchedPositions || []).some(p => filters.positions.includes(p))) return false;
+    }
+    return true;
+  });
+}
+
 function coordsOf(profile) {
   return profile && profile.location ? [profile.location.lat, profile.location.lng] : null;
 }
@@ -378,6 +426,17 @@ function Avatar({ name, size = 52, revealed }) {
 }
 function RedactedBar({ width = '70%', label }) {
   return <div className="tm-redacted" style={{ width }}><Lock size={12} /><span>{label || 'gesperrt'}</span></div>;
+}
+/* Geschlecht ist - anders als Name/Foto - bewusst IMMER sichtbar, auch vor
+   einem Match (wie Position/Alter schon heute). */
+function GenderBadge({ gender, size = 14 }) {
+  if (gender !== 'männlich' && gender !== 'weiblich') return null;
+  const symbol = gender === 'männlich' ? '♂' : '♀';
+  return (
+    <span className={'tm-gender-badge tm-gender-badge--' + gender} style={{ fontSize: size }} title={gender} aria-label={gender}>
+      {symbol}
+    </span>
+  );
 }
 function StatChip({ label, value }) {
   return <div className="tm-statchip"><span className="tm-statchip-value">{value}</span><span className="tm-statchip-label">{label}</span></div>;
@@ -570,7 +629,7 @@ function LandingPage({ onStart }) {
     <div className="tm-landing">
       <div className="tm-landing-hero">
         <div className="tm-brand"><span className="tm-brand-text">WECHSEL</span><span className="tm-brand-dot">.</span></div>
-        <p className="tm-landing-headline">Der Transfermarkt für den Amateurfußball in Österreich.</p>
+        <p className="tm-landing-headline">Das Transferportal für den Amateurfußball in Österreich.</p>
         <p className="tm-landing-sub">
           Spieler, Vereine, Trainer, Funktionär:innen, Physios und Masseur:innen finden sich anonym –
           Namen und Kontaktdaten werden erst sichtbar, wenn beide Seiten Interesse zeigen.
@@ -795,6 +854,7 @@ function OnboardingForm({ role, onBack, onSubmit, initialValues }) {
   const [statsYouth, setStatsYouth] = useState(initialValues?.statsYouth || { einsaetze: 0, tore: 0, vorlagen: 0 });
   const [needsPhysio, setNeedsPhysio] = useState(initialValues?.needsPhysio || false);
   const [needsMasseur, setNeedsMasseur] = useState(initialValues?.needsMasseur || false);
+  const [gender, setGender] = useState(initialValues?.gender || '');
 
   const [startDate, setStartDate] = useState(initialValues?.startDate || '');
   const [hasBreak, setHasBreak] = useState(initialValues?.hasBreak || false);
@@ -813,11 +873,13 @@ function OnboardingForm({ role, onBack, onSubmit, initialValues }) {
   const [league, setLeague] = useState(initialValues?.league || '');
   const [searchedPositions, setSearchedPositions] = useState(initialValues?.searchedPositions || []);
   const [searchedStaffTypes, setSearchedStaffTypes] = useState(initialValues?.searchedStaffTypes || []);
+  const [searchedGender, setSearchedGender] = useState(initialValues?.searchedGender || '');
 
   const [staffType, setStaffType] = useState(initialValues?.staffType || '');
   const [yearsExperience, setYearsExperience] = useState(initialValues?.yearsExperience || 0);
   const [qualification, setQualification] = useState(initialValues?.qualification || '');
   const [earliestAppointmentWeeks, setEarliestAppointmentWeeks] = useState(initialValues?.earliestAppointmentWeeks ?? '');
+  const [highestLeague, setHighestLeague] = useState(initialValues?.highestLeague || '');
 
   const [privacyConsent, setPrivacyConsent] = useState(isEditing);
   const [parentalConsent, setParentalConsent] = useState(initialValues?.parentalConsent || false);
@@ -842,8 +904,8 @@ function OnboardingForm({ role, onBack, onSubmit, initialValues }) {
     }
     const fullName = `${firstName.trim()} ${lastName.trim()}`.trim();
     if (isPlayer) {
-      if (!firstName.trim() || !lastName.trim() || !birthDate || !position || !strongFoot || !location?.label || !leagueAdult || !startDate) {
-        setErr('Bitte fülle alle Pflichtfelder aus (inkl. Vor-/Nachname, Geburtsdatum, Beginn Fußballspielen und Standort).'); return;
+      if (!firstName.trim() || !lastName.trim() || !gender || !birthDate || !position || !strongFoot || !location?.label || !leagueAdult || !startDate) {
+        setErr('Bitte fülle alle Pflichtfelder aus (inkl. Vor-/Nachname, Geschlecht, Geburtsdatum, Beginn Fußballspielen und Standort).'); return;
       }
       if (hasBreak && (!breakFrom || !breakTo || breakTo <= breakFrom)) {
         setErr('Bitte gib den Pause-Zeitraum korrekt an (bis muss nach von liegen).'); return;
@@ -851,7 +913,7 @@ function OnboardingForm({ role, onBack, onSubmit, initialValues }) {
       if (laz && !lazSince) { setErr('Bitte gib an, seit wann du im LAZ warst/bist.'); return; }
       if (academy && !academySince) { setErr('Bitte gib an, seit wann du in der Akademie warst/bist.'); return; }
       onSubmit({
-        name: fullName, firstName: firstName.trim(), lastName: lastName.trim(), birthDate, position, secondaryPosition, strongFoot, location, leagueAdult, statsAdult,
+        name: fullName, firstName: firstName.trim(), lastName: lastName.trim(), gender, birthDate, position, secondaryPosition, strongFoot, location, leagueAdult, statsAdult,
         leagueYouth: hasYouth ? leagueYouth : '', statsYouth: hasYouth ? statsYouth : { einsaetze: 0, tore: 0, vorlagen: 0 },
         startDate, hasBreak, breakFrom: hasBreak ? breakFrom : '', breakTo: hasBreak ? breakTo : '',
         laz, lazSince: laz ? lazSince : '', lazUntil: laz ? lazUntil : '',
@@ -866,13 +928,14 @@ function OnboardingForm({ role, onBack, onSubmit, initialValues }) {
       onSubmit({
         name: fullName, firstName: firstName.trim(), lastName: lastName.trim(), birthDate, staffType, qualification, yearsExperience, location,
         earliestAppointmentWeeks: staffType === 'physio' && earliestAppointmentWeeks !== '' ? Number(earliestAppointmentWeeks) : undefined,
+        highestLeague: staffType === 'trainer' ? highestLeague : undefined,
         privacyConsentAt: initialValues?.privacyConsentAt || Date.now(), parentalConsent: isMinor ? true : false,
       });
     } else {
-      if (!clubName.trim() || !location?.label || !league || (searchedPositions.length === 0 && searchedStaffTypes.length === 0)) {
-        setErr('Bitte fülle alle Pflichtfelder aus und wähle mind. eine gesuchte Position oder Staff-Rolle.'); return;
+      if (!clubName.trim() || !location?.label || !league || !searchedGender || (searchedPositions.length === 0 && searchedStaffTypes.length === 0)) {
+        setErr('Bitte fülle alle Pflichtfelder aus (inkl. gesuchtem Geschlecht) und wähle mind. eine gesuchte Position oder Staff-Rolle.'); return;
       }
-      onSubmit({ clubName: clubName.trim(), contactPerson: contactPerson.trim(), location, league, searchedPositions, searchedStaffTypes, privacyConsentAt: initialValues?.privacyConsentAt || Date.now() });
+      onSubmit({ clubName: clubName.trim(), contactPerson: contactPerson.trim(), location, league, searchedPositions, searchedStaffTypes, searchedGender, privacyConsentAt: initialValues?.privacyConsentAt || Date.now() });
     }
   }
 
@@ -888,6 +951,12 @@ function OnboardingForm({ role, onBack, onSubmit, initialValues }) {
             <div className="tm-date-row">
               <label className="tm-label tm-label--small">Vorname<input className="tm-input" value={firstName} onChange={e => setFirstName(e.target.value)} placeholder="Vorname" /></label>
               <label className="tm-label tm-label--small">Nachname<input className="tm-input" value={lastName} onChange={e => setLastName(e.target.value)} placeholder="Nachname" /></label>
+            </div>
+            <div className="tm-label">Geschlecht
+              <div className="tm-gender-row">
+                <button type="button" className={'tm-gender-btn' + (gender === 'männlich' ? ' tm-gender-btn--active' : '')} onClick={() => setGender('männlich')}>♂ Männlich</button>
+                <button type="button" className={'tm-gender-btn' + (gender === 'weiblich' ? ' tm-gender-btn--active' : '')} onClick={() => setGender('weiblich')}>♀ Weiblich</button>
+              </div>
             </div>
             <label className="tm-label">Geburtsdatum<input className="tm-input" type="date" max={TODAY_ISO} value={birthDate} onChange={e => setBirthDate(e.target.value)} /></label>
             <label className="tm-label">Hauptposition
@@ -1022,6 +1091,14 @@ function OnboardingForm({ role, onBack, onSubmit, initialValues }) {
                 <input className="tm-input" type="number" min="0" value={earliestAppointmentWeeks} onFocus={e => e.target.select()} onChange={e => setEarliestAppointmentWeeks(e.target.value)} />
               </label>
             )}
+            {staffType === 'trainer' && (
+              <label className="tm-label">Höchste trainierte Liga (optional)
+                <select className="tm-input" value={highestLeague} onChange={e => setHighestLeague(e.target.value)}>
+                  <option value="">— wählen —</option>
+                  {AUSTRIA_LEAGUE_LABELS.map(l => <option key={l} value={l}>{l}</option>)}
+                </select>
+              </label>
+            )}
             <div className="tm-label">Standort<LocationField value={location} onChange={setLocation} /></div>
           </>
         ) : (
@@ -1035,6 +1112,13 @@ function OnboardingForm({ role, onBack, onSubmit, initialValues }) {
                 {AUSTRIA_LEAGUE_LABELS.map(l => <option key={l} value={l}>{l}</option>)}
               </select>
             </label>
+            <div className="tm-label">Gesuchtes Geschlecht
+              <div className="tm-gender-row">
+                <button type="button" className={'tm-gender-btn' + (searchedGender === 'männlich' ? ' tm-gender-btn--active' : '')} onClick={() => setSearchedGender('männlich')}>♂ Männlich</button>
+                <button type="button" className={'tm-gender-btn' + (searchedGender === 'weiblich' ? ' tm-gender-btn--active' : '')} onClick={() => setSearchedGender('weiblich')}>♀ Weiblich</button>
+                <button type="button" className={'tm-gender-btn' + (searchedGender === 'alle' ? ' tm-gender-btn--active' : '')} onClick={() => setSearchedGender('alle')}>Alle</button>
+              </div>
+            </div>
             <div className="tm-fieldset-title">Gesuchte Position(en)</div>
             <div className="tm-checkbox-grid">
               {POSITIONS.map(p => (
@@ -1125,7 +1209,7 @@ function DiscoverCard({ profile, myProfile, revealed, distanceKm, exitDirection,
           ) : (
             <RedactedBar label={isClubCard ? 'Vereinsname gesperrt' : 'Name gesperrt'} />
           )}
-          {isPlayerCard && <div className="tm-card-sub">{age} Jahre</div>}
+          {isPlayerCard && <div className="tm-card-sub"><GenderBadge gender={profile.gender} /> {age} Jahre</div>}
           {isStaffCard && <div className="tm-card-sub">{staffMeta?.label}{age != null ? ` · ${age} Jahre` : ''}</div>}
           {isClubCard && <div className="tm-card-sub">{revealed ? profile.contactPerson : ''}</div>}
         </div>
@@ -1180,6 +1264,9 @@ function DiscoverCard({ profile, myProfile, revealed, distanceKm, exitDirection,
               {profile.staffType === 'physio' && profile.earliestAppointmentWeeks != null && (
                 <div className="tm-fact-line"><span className="tm-fact-label">Frühester Termin</span><span>in {profile.earliestAppointmentWeeks} Wochen</span></div>
               )}
+              {profile.staffType === 'trainer' && profile.highestLeague && (
+                <div className="tm-fact-line"><span className="tm-fact-label">Höchste trainierte Liga</span><span>{profile.highestLeague}</span></div>
+              )}
             </>
           )}
           {aeInfo && <AEBox aeInfo={aeInfo} title={aeTitle} />}
@@ -1189,10 +1276,103 @@ function DiscoverCard({ profile, myProfile, revealed, distanceKm, exitDirection,
   );
 }
 
-function DiscoverScreen({ myProfile, premiumDemo, deck, deckLoading, onDecide, onReload, onSeedDemo }) {
+/* Filter-Panel: rollenabhängiger Inhalt (Verein sucht Spieler/Trainer vs.
+   Spieler:in sucht Verein). onFiltersChange ist direkt der setFilters-Setter
+   aus der App-Komponente, akzeptiert also auch Updater-Funktionen. */
+function FilterPanel({ myProfile, filters, onFiltersChange, onClose }) {
+  function toggleListValue(key, value) {
+    onFiltersChange(prev => ({ ...prev, [key]: prev[key].includes(value) ? prev[key].filter(v => v !== value) : [...prev[key], value] }));
+  }
+
+  return (
+    <div className="tm-overlay" onClick={onClose}>
+      <div className="tm-overlay-card tm-overlay-card--scroll" onClick={e => e.stopPropagation()}>
+        <div className="tm-h2">Filter</div>
+
+        <div className="tm-fieldset-title">Entfernung</div>
+        <select
+          className="tm-input"
+          value={filters.maxDistanceKm ?? ''}
+          onChange={e => onFiltersChange(prev => ({ ...prev, maxDistanceKm: e.target.value ? Number(e.target.value) : null }))}
+        >
+          <option value="">Unbegrenzt</option>
+          {DISTANCE_STEPS_KM.map(km => <option key={km} value={km}>{km} km</option>)}
+        </select>
+
+        {myProfile.role === 'club' && (
+          <>
+            <div className="tm-fieldset-title">Position(en) – Spieler</div>
+            <div className="tm-checkbox-grid">
+              {POSITIONS.map(p => (
+                <label key={p.code} className={'tm-pos-check' + (filters.positions.includes(p.code) ? ' tm-pos-check--active' : '')}>
+                  <input type="checkbox" checked={filters.positions.includes(p.code)} onChange={() => toggleListValue('positions', p.code)} />
+                  {p.code}
+                </label>
+              ))}
+            </div>
+
+            <div className="tm-fieldset-title">Starker Fuß – Spieler</div>
+            <select className="tm-input" value={filters.strongFoot} onChange={e => onFiltersChange(prev => ({ ...prev, strongFoot: e.target.value }))}>
+              <option value="">Alle</option>
+              {FEET.map(f => <option key={f} value={f}>{f}</option>)}
+            </select>
+
+            <div className="tm-fieldset-title">Ausbildungsentschädigung</div>
+            <select className="tm-input" value={filters.aeFilter} onChange={e => onFiltersChange(prev => ({ ...prev, aeFilter: e.target.value }))}>
+              <option value="alle">Alle</option>
+              <option value="ja">Nur mit Entschädigung</option>
+              <option value="nein">Nur ohne Entschädigung</option>
+            </select>
+
+            <div className="tm-fieldset-title">Höchste Leistungsstufe (Spieler &amp; Trainer)</div>
+            <div className="tm-checkbox-grid">
+              {AUSTRIA_LEAGUE_LABELS.map(l => (
+                <label key={l} className={'tm-pos-check' + (filters.leagueLevels.includes(l) ? ' tm-pos-check--active' : '')}>
+                  <input type="checkbox" checked={filters.leagueLevels.includes(l)} onChange={() => toggleListValue('leagueLevels', l)} />
+                  {l}
+                </label>
+              ))}
+            </div>
+          </>
+        )}
+
+        {myProfile.role === 'player' && (
+          <>
+            <div className="tm-fieldset-title">Leistungsklasse (Verein)</div>
+            <div className="tm-checkbox-grid">
+              {AUSTRIA_LEAGUE_LABELS.map(l => (
+                <label key={l} className={'tm-pos-check' + (filters.leagueLevels.includes(l) ? ' tm-pos-check--active' : '')}>
+                  <input type="checkbox" checked={filters.leagueLevels.includes(l)} onChange={() => toggleListValue('leagueLevels', l)} />
+                  {l}
+                </label>
+              ))}
+            </div>
+            <div className="tm-fieldset-title">Position (die der Verein sucht)</div>
+            <div className="tm-checkbox-grid">
+              {POSITIONS.map(p => (
+                <label key={p.code} className={'tm-pos-check' + (filters.positions.includes(p.code) ? ' tm-pos-check--active' : '')}>
+                  <input type="checkbox" checked={filters.positions.includes(p.code)} onChange={() => toggleListValue('positions', p.code)} />
+                  {p.code}
+                </label>
+              ))}
+            </div>
+          </>
+        )}
+
+        <div className="tm-filter-actions">
+          <button type="button" className="tm-btn" onClick={() => onFiltersChange(DEFAULT_FILTERS)}>Zurücksetzen</button>
+          <button type="button" className="tm-btn tm-btn--primary" onClick={onClose}>Fertig</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DiscoverScreen({ myProfile, premiumDemo, deck, deckLoading, onDecide, onReload, onSeedDemo, filters, onFiltersChange }) {
   const [dragX, setDragX] = useState(0);
   const [dragging, setDragging] = useState(false);
   const [exitDirection, setExitDirection] = useState(null);
+  const [showFilters, setShowFilters] = useState(false);
   const startX = useRef(0);
 
   const current = deck[0];
@@ -1216,9 +1396,17 @@ function DiscoverScreen({ myProfile, premiumDemo, deck, deckLoading, onDecide, o
     <div className="tm-screen tm-discover">
       <div className="tm-discover-header">
         <h2 className="tm-h2">Entdecken</h2>
-        <button className="tm-icon-btn" onClick={onReload} title="Aktualisieren"><RotateCcw size={16} /></button>
+        <div className="tm-discover-header-actions">
+          <button className={'tm-icon-btn' + (hasActiveFilters(filters) ? ' tm-icon-btn--active' : '')} onClick={() => setShowFilters(true)} title="Filter">
+            <SlidersHorizontal size={16} />
+          </button>
+          <button className="tm-icon-btn" onClick={onReload} title="Aktualisieren"><RotateCcw size={16} /></button>
+        </div>
       </div>
       {premiumDemo && <div className="tm-premium-banner"><ShieldCheck size={13} /> Demo: Premium-Ansicht aktiv – Namen &amp; Fotos sind hier nur simuliert sichtbar.</div>}
+      {showFilters && (
+        <FilterPanel myProfile={myProfile} filters={filters} onFiltersChange={onFiltersChange} onClose={() => setShowFilters(false)} />
+      )}
       <div className="tm-deck-area">
         {deckLoading ? (
           <div className="tm-empty">Profile werden geladen …</div>
@@ -1278,7 +1466,7 @@ function MatchesScreen({ matches, loading, onOpenChat }) {
               <div className="tm-match-item-text">
                 <div className="tm-card-name">{displayNameOf(m.profile)}</div>
                 <div className="tm-card-sub">
-                  {m.profile.role === 'player' ? (posByCode(m.profile.position)?.label || m.profile.position)
+                  {m.profile.role === 'player' ? <><GenderBadge gender={m.profile.gender} /> {posByCode(m.profile.position)?.label || m.profile.position}</>
                     : m.profile.role === 'staff' ? staffTypeByCode(m.profile.staffType)?.label
                     : m.profile.league}
                 </div>
@@ -1385,7 +1573,7 @@ function ProfileScreen({ profile, premiumDemo, onTogglePremium, onReset, onSignO
           <div className="tm-card-top-text">
             <div className="tm-card-name">{displayNameOf(profile)}</div>
             <div className="tm-card-sub">
-              {isPlayer && `${age} Jahre · ${profile.location?.label}`}
+              {isPlayer && <><GenderBadge gender={profile.gender} /> {age} Jahre · {profile.location?.label}</>}
               {isStaff && `${staffMeta?.label}${age != null ? ` · ${age} Jahre` : ''} · ${profile.location?.label}`}
               {isClub && `${profile.contactPerson} · ${profile.location?.label}`}
             </div>
@@ -1720,6 +1908,7 @@ export default function App() {
   const [pendingRole, setPendingRole] = useState(null);
   const [screen, setScreen] = useState('discover');
   const [premiumDemo, setPremiumDemo] = useState(false);
+  const [filters, setFilters] = useState(DEFAULT_FILTERS);
 
   const profile = profiles.find(p => p.id === activeProfileId) || profiles[0] || null;
 
@@ -1823,6 +2012,13 @@ export default function App() {
     if (staffProfile.staffType === 'masseur') return Boolean(playerProfile.needsMasseur);
     return false;
   }
+  /* Gesuchtes Geschlecht ist ein hartes, verpflichtendes Suchkriterium des
+     Vereins (wie needsPhysio/-Masseur bei Spieler:innen) - kein Filter im
+     Ad-hoc-Panel, sondern wirkt schon beim Zusammenstellen des Decks. */
+  function clubWantsPlayerGender(clubProfile, playerProfile) {
+    if (!clubProfile.searchedGender || clubProfile.searchedGender === 'alle') return true;
+    return playerProfile.gender === clubProfile.searchedGender;
+  }
 
   async function loadDeck() {
     if (!profile) return;
@@ -1846,6 +2042,12 @@ export default function App() {
       demoPool = demoPool.filter(c => playerWantsStaff(profile, c));
     }
 
+    if (profile.role === 'club') {
+      const keepGender = c => c.role !== 'player' || clubWantsPlayerGender(profile, c);
+      storageCandidates = storageCandidates.filter(keepGender);
+      demoPool = demoPool.filter(keepGender);
+    }
+
     if (isCareStaff) {
       const [realPlayers, demoCarePlayers] = [
         (await listCandidates(['player'], [...exclude])).filter(p => staffWantsPlayer(profile, p)),
@@ -1865,8 +2067,9 @@ export default function App() {
 
     const myCoords = coordsOf(profile);
     const withDist = candidates.map(c => ({ ...c, _dist: haversineKm(myCoords, coordsOf(c)) ?? 999999 }));
-    withDist.sort((a, b) => a._dist - b._dist);
-    setDeck(withDist);
+    const filtered = applyFilters(withDist, profile, filters);
+    filtered.sort((a, b) => a._dist - b._dist);
+    setDeck(filtered);
     setDeckLoading(false);
   }
 
@@ -1924,7 +2127,7 @@ export default function App() {
     try { localStorage.removeItem(ACTIVE_PROFILE_STORAGE_KEY); } catch { /* ignore */ }
   }
 
-  useEffect(() => { if (profile && screen === 'discover') loadDeck(); /* eslint-disable-next-line */ }, [profile, screen, demoPlayers, demoClubs, demoStaff]);
+  useEffect(() => { if (profile && screen === 'discover') loadDeck(); /* eslint-disable-next-line */ }, [profile, screen, demoPlayers, demoClubs, demoStaff, filters]);
   useEffect(() => { if (profile && screen === 'matches') loadMatches(); /* eslint-disable-next-line */ }, [profile, screen]);
 
   const activeChatMatch = matches.find(m => m.matchId === activeChatId) || null;
@@ -1963,7 +2166,10 @@ export default function App() {
           />
           <main className="tm-main">
             {screen === 'discover' && (
-              <DiscoverScreen myProfile={profile} premiumDemo={premiumDemo} deck={deck} deckLoading={deckLoading} onDecide={handleDecide} onReload={loadDeck} onSeedDemo={reshuffleDemoData} />
+              <DiscoverScreen
+                myProfile={profile} premiumDemo={premiumDemo} deck={deck} deckLoading={deckLoading} onDecide={handleDecide}
+                onReload={loadDeck} onSeedDemo={reshuffleDemoData} filters={filters} onFiltersChange={setFilters}
+              />
             )}
             {screen === 'matches' && !activeChatMatch && (
               <MatchesScreen matches={matches} loading={matchesLoading} onOpenChat={setActiveChatId} />
@@ -2082,6 +2288,15 @@ const CSS = `
 }
 .tm-pos-check input { display: none; }
 .tm-pos-check--active { border-color: var(--floodlight); color: var(--floodlight); background: rgba(244,195,97,0.08); }
+.tm-gender-row { display: flex; gap: 8px; margin-top: 2px; }
+.tm-gender-btn {
+  flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 5px; background: var(--pitch-night);
+  border: 1px solid var(--line); color: var(--chalk-dim); border-radius: 9px; padding: 9px 10px; font-size: 13px; cursor: pointer;
+}
+.tm-gender-btn--active { border-color: var(--floodlight); color: var(--floodlight); background: rgba(244,195,97,0.08); }
+.tm-gender-badge { display: inline-flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; }
+.tm-gender-badge--männlich { color: #6FA8DC; }
+.tm-gender-badge--weiblich { color: #E37FB0; }
 .tm-error { color: var(--abseits); font-size: 13px; }
 
 .tm-btn {
@@ -2118,8 +2333,12 @@ const CSS = `
 }
 
 .tm-discover-header { display: flex; align-items: center; justify-content: space-between; }
+.tm-discover-header-actions { display: flex; align-items: center; gap: 8px; }
 .tm-icon-btn { background: var(--pitch-night); border: 1px solid var(--line); color: var(--chalk); border-radius: 9px; padding: 7px; cursor: pointer; display: inline-flex; }
 .tm-icon-btn:focus-visible { outline: 2px solid var(--floodlight); }
+.tm-icon-btn--active { border-color: var(--floodlight); color: var(--floodlight); }
+.tm-filter-actions { display: flex; gap: 8px; margin-top: 14px; }
+.tm-filter-actions .tm-btn { flex: 1; }
 .tm-deck-area { position: relative; flex: 1; min-height: 480px; display: flex; align-items: center; justify-content: center; }
 
 .tm-card {
