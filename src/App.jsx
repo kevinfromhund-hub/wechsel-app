@@ -901,7 +901,7 @@ function OnboardingForm({ role, onBack, onSubmit, initialValues }) {
   const [lastName, setLastName] = useState(
     initialValues?.lastName || initialValues?.name?.trim().split(/\s+/).slice(-1).join(' ') || ''
   );
-  const [birthMode, setBirthMode] = useState('date'); // 'date' | 'age'
+  const [birthMode, setBirthMode] = useState(initialValues?.birthDate ? 'date' : 'age'); // 'date' | 'age'
   const [birthDate, setBirthDate] = useState(initialValues?.birthDate || '');
   const [ageInput, setAgeInput] = useState('');
   const [position, setPosition] = useState(initialValues?.position || '');
