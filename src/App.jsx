@@ -151,9 +151,26 @@ const FOERDER_TYPES = {
   laz: { label: 'LAZ (Hauptkader)', amount: 700 },
   lazVorstufe: { label: 'LAZ-Vorstufe', amount: 350 },
 };
-const FOERDER_TYPE_OPTIONS = Object.entries(FOERDER_TYPES).map(([code, t]) => ({ code, label: t.label }));
-let foerderPeriodIdCounter = 0;
-function nextFoerderPeriodId() { foerderPeriodIdCounter += 1; return foerderPeriodIdCounter; }
+const FOERDER_ORDER = ['lazVorstufe', 'laz', 'nachwuchszentrum', 'akademie'];
+function buildFoerderPeriods(foerderYears, startAge) {
+  let cursor = Math.max(startAge || 9, 9);
+  const periods = [];
+  for (const code of FOERDER_ORDER) {
+    const years = Number(foerderYears[code]) || 0;
+    if (years > 0) {
+      periods.push({ type: code, startLebensjahr: cursor, years });
+      cursor += years;
+    }
+  }
+  return periods;
+}
+function foerderYearsFromPeriods(periods) {
+  const years = { lazVorstufe: 0, laz: 0, nachwuchszentrum: 0, akademie: 0 };
+  for (const p of periods || []) {
+    if (years[p.type] != null) years[p.type] += Number(p.years) || 0;
+  }
+  return years;
+}
 
 function calcAge(birthDateStr, atDateStr) {
   if (!birthDateStr) return null;
@@ -906,8 +923,8 @@ function OnboardingForm({ role, onBack, onSubmit, initialValues }) {
   const [hasBreak, setHasBreak] = useState(initialValues?.hasBreak || false);
   const [breakFrom, setBreakFrom] = useState(initialValues?.breakFrom || '');
   const [breakTo, setBreakTo] = useState(initialValues?.breakTo || '');
-  const [foerderPeriods, setFoerderPeriods] = useState(
-    (initialValues?.foerderPeriods || []).map(p => ({ ...p, id: p.id ?? nextFoerderPeriodId() }))
+  const [foerderYears, setFoerderYears] = useState(
+    initialValues?.foerderPeriods ? foerderYearsFromPeriods(initialValues.foerderPeriods) : { lazVorstufe: 0, laz: 0, nachwuchszentrum: 0, akademie: 0 }
   );
   const [selfNoCompensationClaim, setSelfNoCompensationClaim] = useState(initialValues?.selfNoCompensationClaim || false);
 
@@ -945,15 +962,10 @@ function OnboardingForm({ role, onBack, onSubmit, initialValues }) {
   function toggleSearchedStaffType(code) {
     setSearchedStaffTypes(prev => prev.includes(code) ? prev.filter(c => c !== code) : [...prev, code]);
   }
-  function addFoerderPeriod() {
-    setFoerderPeriods(prev => [...prev, { id: nextFoerderPeriodId(), type: 'lazVorstufe', startLebensjahr: 10, years: 1 }]);
-  }
-  function updateFoerderPeriod(id, fields) {
-    setFoerderPeriods(prev => prev.map(p => (p.id === id ? { ...p, ...fields } : p)));
-  }
-  function removeFoerderPeriod(id) {
-    setFoerderPeriods(prev => prev.filter(p => p.id !== id));
-  }
+  const startAgeForPeriods = startMode === 'age' && startAgeInput !== ''
+    ? Number(startAgeInput)
+    : (startMode === 'date' && startDate && effectiveBirthDate ? calcAge(effectiveBirthDate, startDate) : 9);
+  const foerderPeriods = buildFoerderPeriods(foerderYears, startAgeForPeriods);
 
   function handleSubmit(e) {
     e.preventDefault();
@@ -974,7 +986,7 @@ function OnboardingForm({ role, onBack, onSubmit, initialValues }) {
         leagueYouth: hasYouth ? leagueYouth : '', statsYouth: hasYouth ? statsYouth : { einsaetze: 0, tore: 0, vorlagen: 0 },
         startDate: startMode === 'date' ? startDate : '', startAgeYears: startMode === 'age' && startAgeInput !== '' ? Number(startAgeInput) : undefined,
         hasBreak, breakFrom: hasBreak ? breakFrom : '', breakTo: hasBreak ? breakTo : '',
-        foerderPeriods: foerderPeriods.map(({ id, ...rest }) => rest),
+        foerderPeriods,
         selfNoCompensationClaim, needsPhysio, needsMasseur,
         privacyConsentAt: initialValues?.privacyConsentAt || Date.now(), parentalConsent: isMinor ? true : false,
       });
@@ -1108,20 +1120,20 @@ function OnboardingForm({ role, onBack, onSubmit, initialValues }) {
               </div>
             )}
 
-            <div className="tm-fieldset-title">Förderzeiträume (LAZ-Vorstufe / LAZ / Nachwuchszentrum / Akademie)</div>
-            {foerderPeriods.map(p => (
-              <div key={p.id} className="tm-period-row">
-                <select className="tm-input" value={p.type} onChange={e => updateFoerderPeriod(p.id, { type: e.target.value })}>
-                  {FOERDER_TYPE_OPTIONS.map(o => <option key={o.code} value={o.code}>{o.label}</option>)}
-                </select>
-                <input className="tm-input tm-period-num" type="number" min="9" max="23" title="Start-Lebensjahr" value={p.startLebensjahr} onFocus={e => e.target.select()} onChange={e => updateFoerderPeriod(p.id, { startLebensjahr: Number(e.target.value) })} />
-                <span className="tm-period-label">ab Lj., für</span>
-                <input className="tm-input tm-period-num" type="number" min="1" max="15" title="Dauer in Jahren" value={p.years} onFocus={e => e.target.select()} onChange={e => updateFoerderPeriod(p.id, { years: Number(e.target.value) })} />
-                <span className="tm-period-label">Jahre</span>
-                <button type="button" className="tm-period-remove" onClick={() => removeFoerderPeriod(p.id)} aria-label="Zeitraum entfernen">×</button>
-              </div>
-            ))}
-            <button type="button" className="tm-link-btn" onClick={addFoerderPeriod}>+ Förderzeitraum hinzufügen</button>
+            <div className="tm-fieldset-title">Förderzeiträume (Jahre je Kategorie, 0 = nicht zutreffend)</div>
+            <div className="tm-period-block">
+              {FOERDER_ORDER.map(code => (
+                <div key={code} className="tm-period-row">
+                  <span className="tm-period-type-label">{FOERDER_TYPES[code].label}</span>
+                  <input
+                    className="tm-input tm-period-num" type="number" min="0" max="15"
+                    value={foerderYears[code]} onFocus={e => e.target.select()}
+                    onChange={e => setFoerderYears(prev => ({ ...prev, [code]: Number(e.target.value) }))}
+                  />
+                  <span className="tm-period-label">Jahre</span>
+                </div>
+              ))}
+            </div>
 
             <label className="tm-checkbox-row">
               <input type="checkbox" checked={selfNoCompensationClaim} onChange={e => setSelfNoCompensationClaim(e.target.checked)} />
@@ -2387,11 +2399,11 @@ const CSS = `
 .tm-mode-toggle { display: flex; gap: 6px; margin-bottom: 4px; }
 .tm-mode-btn { background: none; border: 1px solid var(--line); color: var(--chalk-dim); border-radius: 20px; padding: 3px 10px; font-size: 11px; cursor: pointer; }
 .tm-mode-btn--active { border-color: var(--floodlight); color: var(--floodlight); }
-.tm-period-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-.tm-period-row .tm-input { flex: 1; min-width: 120px; }
+.tm-period-block { display: flex; flex-direction: column; gap: 8px; }
+.tm-period-row { display: flex; align-items: center; gap: 8px; }
+.tm-period-type-label { flex: 1; font-size: 13px; color: var(--chalk); }
 .tm-period-num { flex: 0 0 60px !important; min-width: 60px !important; text-align: center; }
 .tm-period-label { font-size: 11.5px; color: var(--chalk-dim); white-space: nowrap; }
-.tm-period-remove { background: none; border: 1px solid var(--line); color: var(--chalk-dim); border-radius: 7px; width: 28px; height: 28px; cursor: pointer; font-size: 15px; line-height: 1; flex-shrink: 0; }
 .tm-gender-badge { display: inline-flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; }
 .tm-gender-badge--männlich { color: #6FA8DC; }
 .tm-gender-badge--weiblich { color: #E37FB0; }
