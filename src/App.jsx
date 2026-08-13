@@ -143,6 +143,17 @@ const AE_ZERO_REASON_TEXT = {
   break: 'Pause > 18 Monate (§ 12 Abs. 4 ÖFB-Regulativ)',
   age: '28. Lebensjahr vollendet (§ 10 Abs. 5 ÖFB-Regulativ)',
 };
+/* Vier Förderkategorien laut ÖFB-Regulativ Anhang I lit. b/c, jeweils pro
+   Ausbildungsjahr in der Kategorie. */
+const FOERDER_TYPES = {
+  akademie: { label: 'Akademie', amount: 1600 },
+  nachwuchszentrum: { label: 'Nachwuchszentrum', amount: 1150 },
+  laz: { label: 'LAZ (Hauptkader)', amount: 700 },
+  lazVorstufe: { label: 'LAZ-Vorstufe', amount: 350 },
+};
+const FOERDER_TYPE_OPTIONS = Object.entries(FOERDER_TYPES).map(([code, t]) => ({ code, label: t.label }));
+let foerderPeriodIdCounter = 0;
+function nextFoerderPeriodId() { foerderPeriodIdCounter += 1; return foerderPeriodIdCounter; }
 
 function calcAge(birthDateStr, atDateStr) {
   if (!birthDateStr) return null;
@@ -160,12 +171,6 @@ function monthsBetween(dateAStr, dateBStr) {
 function yearOfLebensjahr(lebensjahr, birthDateStr) {
   return new Date(birthDateStr).getFullYear() + lebensjahr;
 }
-function rangeCoversYear(year, sinceStr, untilStr) {
-  if (!sinceStr) return false;
-  const sinceYear = new Date(sinceStr).getFullYear();
-  const untilYear = untilStr ? new Date(untilStr).getFullYear() : new Date().getFullYear();
-  return year >= sinceYear && year <= untilYear;
-}
 function breakCoversYear(year, breakFromStr, breakToStr) {
   if (!breakFromStr || !breakToStr) return false;
   return year >= new Date(breakFromStr).getFullYear() && year <= new Date(breakToStr).getFullYear();
@@ -175,7 +180,15 @@ function formatEuro(n) {
 }
 
 /* Schätzt die Ausbildungs- und Förderungsentschädigung für `player` bei einem
-   Wechsel zu einem Verein der Leistungsstufe `receivingLevel` (1 = höchste). */
+   Wechsel zu einem Verein der Leistungsstufe `receivingLevel` (1 = höchste).
+
+   player.foerderPeriods: [{ type: 'akademie'|'nachwuchszentrum'|'laz'|
+   'lazVorstufe', startLebensjahr: 9..23, years: 1..15 }, ...] - mehrere,
+   auch überlappende Zeiträume (z. B. gleichzeitig LAZ und Akademie) wirken
+   additiv wie im Regulativ vorgesehen.
+
+   player.startAgeYears kann statt player.startDate direkt das Alter beim
+   Beginn des Fußballspielens angeben (Alternative zu einem Datum). */
 function calcAusbildungsentschaedigung(player, receivingLevel) {
   const result = { total: 0, breakdown: [], zeroReason: null };
   if (!player || !player.birthDate) return result;
@@ -190,19 +203,40 @@ function calcAusbildungsentschaedigung(player, receivingLevel) {
      hier um 50% reduziert angesetzt (geringere Bewerbs-/Fördersätze im
      Mädchen-/Frauenfußball) - keine offizielle ÖFB-Regel, sondern eine
      bewusste Vereinfachung dieses Prototyps, analog zur restlichen
-     AE-Berechnung, die ohnehin nur eine Schätzung ist. */
+     AE-Berechnung, die ohnehin nur eine Schätzung ist. Der Leistungsstufen-
+     Faktor selbst richtet sich immer nach der Herren-Liga des aufnehmenden
+     Vereins. */
   const genderFactor = player.gender === 'weiblich' ? 0.5 : 1;
-  const startAge = player.startDate ? Math.max(calcAge(player.birthDate, player.startDate), 9) : 9;
+  const startAge = player.startAgeYears != null
+    ? Math.max(player.startAgeYears, 9)
+    : (player.startDate ? Math.max(calcAge(player.birthDate, player.startDate), 9) : 9);
+
+  /* Das jeweils LAUFENDE (noch nicht abgeschlossene) Lebensjahr wird pro
+     Kalenderjahr zweistufig angerechnet, wie im ÖFB-Ledger üblich (Auszahlung
+     je zur Hälfte zu Frühjahr/Herbst): 50% ab 1.1., die restlichen 50% ab
+     1.6. des laufenden Jahres. Bereits abgeschlossene, frühere Lebensjahre
+     zählen unverändert zu 100%. */
+  const now = new Date();
+  const juneFirstThisYear = new Date(now.getFullYear(), 5, 1);
+  const seasonProrationForCurrentLj = now < juneFirstThisYear ? 0.5 : 1;
+
   for (let lj = 9; lj <= 23; lj++) {
     if (lj < startAge || lj > age) continue;
     const year = yearOfLebensjahr(lj, player.birthDate);
     if (breakCoversYear(year, player.breakFrom, player.breakTo)) continue;
     let base = AE_BASE_BY_AGE[lj] || 0;
     let bonus = 0, tags = [];
-    if (player.academy && rangeCoversYear(year, player.academySince, player.academyUntil)) { bonus += 1600; tags.push('Akademie'); }
-    if (player.laz && rangeCoversYear(year, player.lazSince, player.lazUntil)) { bonus += 700; tags.push('LAZ'); }
-    const yearTotal = Math.round((base + bonus) * factor * genderFactor);
-    result.breakdown.push({ lebensjahr: lj, base, bonus, tags, yearTotal });
+    for (const period of (player.foerderPeriods || [])) {
+      if (!period.type || !period.startLebensjahr || !period.years) continue;
+      const endLj = period.startLebensjahr + period.years - 1;
+      if (lj >= period.startLebensjahr && lj <= endLj) {
+        const type = FOERDER_TYPES[period.type];
+        if (type) { bonus += type.amount; tags.push(type.label); }
+      }
+    }
+    const seasonProration = lj === age ? seasonProrationForCurrentLj : 1;
+    const yearTotal = Math.round((base + bonus) * factor * genderFactor * seasonProration);
+    result.breakdown.push({ lebensjahr: lj, base, bonus, tags, yearTotal, seasonProration });
     result.total += yearTotal;
   }
   result.total = Math.round(result.total);
@@ -251,13 +285,16 @@ function generateDemoPlayer(index, sessionSeed) {
     breakTo = isoDate(bf.getFullYear(), bf.getMonth() + 1, Math.min(bf.getDate(), 28));
   }
 
-  const laz = randBool(0.25);
-  const lazSince = laz ? randomDateAfter(birthDate, 10, 14) : '';
-  const lazUntil = laz && randBool(0.5) ? randomDateAfter(lazSince, 1, 4) : '';
-
-  const academy = randBool(0.2);
-  const academySince = academy ? randomDateAfter(birthDate, 12, 16) : '';
-  const academyUntil = academy && randBool(0.5) ? randomDateAfter(academySince, 1, 4) : '';
+  const demoAge = Math.max(calcAge(birthDate) || 15, 12);
+  const foerderPeriods = [];
+  if (randBool(0.25)) {
+    const startLj = randInt(10, Math.max(10, Math.min(14, demoAge - 1)));
+    foerderPeriods.push({ type: randChoice(['lazVorstufe', 'laz']), startLebensjahr: startLj, years: randInt(1, 3) });
+  }
+  if (randBool(0.2)) {
+    const startLj = randInt(13, Math.max(13, Math.min(17, demoAge - 1)));
+    foerderPeriods.push({ type: randBool(0.6) ? 'akademie' : 'nachwuchszentrum', startLebensjahr: startLj, years: randInt(1, 3) });
+  }
 
   const hasYouth = randBool(0.5);
 
@@ -272,7 +309,7 @@ function generateDemoPlayer(index, sessionSeed) {
     statsAdult: { einsaetze: randInt(5, 26), tore: isGK ? 0 : randInt(0, 15), vorlagen: isGK ? 0 : randInt(0, 12) },
     leagueYouth: hasYouth ? randChoice(LEAGUES_YOUTH) : '',
     statsYouth: hasYouth ? { einsaetze: randInt(5, 26), tore: isGK ? 0 : randInt(0, 15), vorlagen: isGK ? 0 : randInt(0, 12) } : { einsaetze: 0, tore: 0, vorlagen: 0 },
-    startDate, hasBreak, breakFrom, breakTo, laz, lazSince, lazUntil, academy, academySince, academyUntil,
+    startDate, hasBreak, breakFrom, breakTo, foerderPeriods,
     selfNoCompensationClaim: randBool(0.15),
     needsPhysio: randBool(0.2), needsMasseur: randBool(0.2),
     gender: randChoice(['männlich', 'weiblich']),
@@ -426,6 +463,14 @@ function RedactedBar({ width = '70%', label }) {
 }
 /* Geschlecht ist - anders als Name/Foto - bewusst IMMER sichtbar, auch vor
    einem Match (wie Position/Alter schon heute). */
+function ModeToggle({ mode, onChange, dateLabel, otherLabel }) {
+  return (
+    <div className="tm-mode-toggle">
+      <button type="button" className={'tm-mode-btn' + (mode === 'date' ? ' tm-mode-btn--active' : '')} onClick={() => onChange('date')}>{dateLabel}</button>
+      <button type="button" className={'tm-mode-btn' + (mode === 'age' ? ' tm-mode-btn--active' : '')} onClick={() => onChange('age')}>{otherLabel}</button>
+    </div>
+  );
+}
 function GenderBadge({ gender, size = 14 }) {
   if (gender !== 'männlich' && gender !== 'weiblich') return null;
   const symbol = gender === 'männlich' ? '♂' : '♀';
@@ -456,12 +501,12 @@ function PitchMini({ codes, secondaryCode }) {
     </svg>
   );
 }
-function BadgeRow({ laz, academy }) {
-  if (!laz && !academy) return null;
+function BadgeRow({ foerderPeriods }) {
+  const types = [...new Set((foerderPeriods || []).map(p => p.type))].filter(t => FOERDER_TYPES[t]);
+  if (types.length === 0) return null;
   return (
     <div className="tm-badge-row">
-      {laz && <span className="tm-badge"><GraduationCap size={11} /> LAZ</span>}
-      {academy && <span className="tm-badge"><GraduationCap size={11} /> Akademie</span>}
+      {types.map(t => <span key={t} className="tm-badge"><GraduationCap size={11} /> {FOERDER_TYPES[t].label}</span>)}
     </div>
   );
 }
@@ -839,7 +884,9 @@ function OnboardingForm({ role, onBack, onSubmit, initialValues }) {
   const [lastName, setLastName] = useState(
     initialValues?.lastName || initialValues?.name?.trim().split(/\s+/).slice(-1).join(' ') || ''
   );
+  const [birthMode, setBirthMode] = useState('date'); // 'date' | 'age'
   const [birthDate, setBirthDate] = useState(initialValues?.birthDate || '');
+  const [ageInput, setAgeInput] = useState('');
   const [position, setPosition] = useState(initialValues?.position || '');
   const [secondaryPosition, setSecondaryPosition] = useState(initialValues?.secondaryPosition || '');
   const [strongFoot, setStrongFoot] = useState(initialValues?.strongFoot || '');
@@ -853,16 +900,15 @@ function OnboardingForm({ role, onBack, onSubmit, initialValues }) {
   const [needsMasseur, setNeedsMasseur] = useState(initialValues?.needsMasseur || false);
   const [gender, setGender] = useState(initialValues?.gender || '');
 
+  const [startMode, setStartMode] = useState(initialValues?.startAgeYears != null && !initialValues?.startDate ? 'age' : 'date');
   const [startDate, setStartDate] = useState(initialValues?.startDate || '');
+  const [startAgeInput, setStartAgeInput] = useState(initialValues?.startAgeYears != null ? String(initialValues.startAgeYears) : '');
   const [hasBreak, setHasBreak] = useState(initialValues?.hasBreak || false);
   const [breakFrom, setBreakFrom] = useState(initialValues?.breakFrom || '');
   const [breakTo, setBreakTo] = useState(initialValues?.breakTo || '');
-  const [laz, setLaz] = useState(initialValues?.laz || false);
-  const [lazSince, setLazSince] = useState(initialValues?.lazSince || '');
-  const [lazUntil, setLazUntil] = useState(initialValues?.lazUntil || '');
-  const [academy, setAcademy] = useState(initialValues?.academy || false);
-  const [academySince, setAcademySince] = useState(initialValues?.academySince || '');
-  const [academyUntil, setAcademyUntil] = useState(initialValues?.academyUntil || '');
+  const [foerderPeriods, setFoerderPeriods] = useState(
+    (initialValues?.foerderPeriods || []).map(p => ({ ...p, id: p.id ?? nextFoerderPeriodId() }))
+  );
   const [selfNoCompensationClaim, setSelfNoCompensationClaim] = useState(initialValues?.selfNoCompensationClaim || false);
 
   const [clubName, setClubName] = useState(initialValues?.clubName || '');
@@ -885,7 +931,10 @@ function OnboardingForm({ role, onBack, onSubmit, initialValues }) {
 
   const [err, setErr] = useState('');
 
-  const isMinor = (isPlayer || isStaff) && birthDate && calcAge(birthDate) < 18;
+  // Alter -> angenähertes Geburtsdatum (1.1.), da die AE-Formel ohnehin nur jahrgenau rechnet.
+  const effectiveBirthDate = birthMode === 'date' ? birthDate : (ageInput !== '' ? `${new Date().getFullYear() - Number(ageInput)}-01-01` : '');
+  const effectiveStartOk = startMode === 'date' ? Boolean(startDate) : startAgeInput !== '';
+  const isMinor = (isPlayer || isStaff) && effectiveBirthDate && calcAge(effectiveBirthDate) < 18;
 
   function toggleSearchedPosition(code) {
     setSearchedPositions(prev => prev.includes(code) ? prev.filter(c => c !== code) : [...prev, code]);
@@ -896,6 +945,15 @@ function OnboardingForm({ role, onBack, onSubmit, initialValues }) {
   function toggleSearchedStaffType(code) {
     setSearchedStaffTypes(prev => prev.includes(code) ? prev.filter(c => c !== code) : [...prev, code]);
   }
+  function addFoerderPeriod() {
+    setFoerderPeriods(prev => [...prev, { id: nextFoerderPeriodId(), type: 'lazVorstufe', startLebensjahr: 10, years: 1 }]);
+  }
+  function updateFoerderPeriod(id, fields) {
+    setFoerderPeriods(prev => prev.map(p => (p.id === id ? { ...p, ...fields } : p)));
+  }
+  function removeFoerderPeriod(id) {
+    setFoerderPeriods(prev => prev.filter(p => p.id !== id));
+  }
 
   function handleSubmit(e) {
     e.preventDefault();
@@ -905,20 +963,18 @@ function OnboardingForm({ role, onBack, onSubmit, initialValues }) {
     }
     const fullName = `${firstName.trim()} ${lastName.trim()}`.trim();
     if (isPlayer) {
-      if (!firstName.trim() || !lastName.trim() || !gender || !birthDate || !position || !strongFoot || !location?.label || !leagueAdult || !startDate) {
-        setErr('Bitte fülle alle Pflichtfelder aus (inkl. Vor-/Nachname, Geschlecht, Geburtsdatum, Beginn Fußballspielen und Standort).'); return;
+      if (!firstName.trim() || !lastName.trim() || !gender || !effectiveBirthDate || !position || !strongFoot || !location?.label || !leagueAdult || !effectiveStartOk) {
+        setErr('Bitte fülle alle Pflichtfelder aus (inkl. Vor-/Nachname, Geschlecht, Geburtsdatum/Alter, Beginn Fußballspielen und Standort).'); return;
       }
       if (hasBreak && (!breakFrom || !breakTo || breakTo <= breakFrom)) {
         setErr('Bitte gib den Pause-Zeitraum korrekt an (bis muss nach von liegen).'); return;
       }
-      if (laz && !lazSince) { setErr('Bitte gib an, seit wann du im LAZ warst/bist.'); return; }
-      if (academy && !academySince) { setErr('Bitte gib an, seit wann du in der Akademie warst/bist.'); return; }
       onSubmit({
-        name: fullName, firstName: firstName.trim(), lastName: lastName.trim(), gender, birthDate, position, secondaryPosition, strongFoot, location, leagueAdult, statsAdult,
+        name: fullName, firstName: firstName.trim(), lastName: lastName.trim(), gender, birthDate: effectiveBirthDate, position, secondaryPosition, strongFoot, location, leagueAdult, statsAdult,
         leagueYouth: hasYouth ? leagueYouth : '', statsYouth: hasYouth ? statsYouth : { einsaetze: 0, tore: 0, vorlagen: 0 },
-        startDate, hasBreak, breakFrom: hasBreak ? breakFrom : '', breakTo: hasBreak ? breakTo : '',
-        laz, lazSince: laz ? lazSince : '', lazUntil: laz ? lazUntil : '',
-        academy, academySince: academy ? academySince : '', academyUntil: academy ? academyUntil : '',
+        startDate: startMode === 'date' ? startDate : '', startAgeYears: startMode === 'age' && startAgeInput !== '' ? Number(startAgeInput) : undefined,
+        hasBreak, breakFrom: hasBreak ? breakFrom : '', breakTo: hasBreak ? breakTo : '',
+        foerderPeriods: foerderPeriods.map(({ id, ...rest }) => rest),
         selfNoCompensationClaim, needsPhysio, needsMasseur,
         privacyConsentAt: initialValues?.privacyConsentAt || Date.now(), parentalConsent: isMinor ? true : false,
       });
@@ -927,7 +983,7 @@ function OnboardingForm({ role, onBack, onSubmit, initialValues }) {
         setErr('Bitte fülle alle Pflichtfelder aus (inkl. Vor-/Nachname, Rolle, Qualifikation und Standort).'); return;
       }
       onSubmit({
-        name: fullName, firstName: firstName.trim(), lastName: lastName.trim(), birthDate, staffType, qualification, yearsExperience, location,
+        name: fullName, firstName: firstName.trim(), lastName: lastName.trim(), birthDate: effectiveBirthDate, staffType, qualification, yearsExperience, location,
         earliestAppointmentWeeks: staffType === 'physio' && earliestAppointmentWeeks !== '' ? Number(earliestAppointmentWeeks) : undefined,
         highestLeague: staffType === 'trainer' ? highestLeague : undefined,
         privacyConsentAt: initialValues?.privacyConsentAt || Date.now(), parentalConsent: isMinor ? true : false,
@@ -969,7 +1025,14 @@ function OnboardingForm({ role, onBack, onSubmit, initialValues }) {
                 <button type="button" className={'tm-gender-btn' + (gender === 'weiblich' ? ' tm-gender-btn--active' : '')} onClick={() => setGender('weiblich')}>♀ Weiblich</button>
               </div>
             </div>
-            <label className="tm-label">Geburtsdatum<input className="tm-input" type="date" max={TODAY_ISO} value={birthDate} onChange={e => setBirthDate(e.target.value)} /></label>
+            <div className="tm-label">Geburtsdatum / Alter
+              <ModeToggle mode={birthMode} onChange={setBirthMode} dateLabel="Datum" otherLabel="Alter" />
+              {birthMode === 'date' ? (
+                <input className="tm-input" type="date" max={TODAY_ISO} value={birthDate} onChange={e => setBirthDate(e.target.value)} />
+              ) : (
+                <input className="tm-input" type="number" min="0" max="60" placeholder="Alter in Jahren" value={ageInput} onFocus={e => e.target.select()} onChange={e => setAgeInput(e.target.value)} />
+              )}
+            </div>
             <label className="tm-label">Hauptposition
               <select className="tm-input" value={position} onChange={e => setPosition(e.target.value)}>
                 <option value="">— wählen —</option>
@@ -1025,7 +1088,14 @@ function OnboardingForm({ role, onBack, onSubmit, initialValues }) {
             )}
 
             <div className="tm-fieldset-title">Ausbildung (für Ausbildungsentschädigung)</div>
-            <label className="tm-label">Begonnen zum Fußballspielen<input className="tm-input" type="date" max={TODAY_ISO} value={startDate} onChange={e => setStartDate(e.target.value)} /></label>
+            <div className="tm-label">Begonnen zum Fußballspielen
+              <ModeToggle mode={startMode} onChange={setStartMode} dateLabel="Datum" otherLabel="Alter damals" />
+              {startMode === 'date' ? (
+                <input className="tm-input" type="date" max={TODAY_ISO} value={startDate} onChange={e => setStartDate(e.target.value)} />
+              ) : (
+                <input className="tm-input" type="number" min="0" max="30" placeholder="Alter in Jahren" value={startAgeInput} onFocus={e => e.target.select()} onChange={e => setStartAgeInput(e.target.value)} />
+              )}
+            </div>
 
             <label className="tm-checkbox-row">
               <input type="checkbox" checked={hasBreak} onChange={e => setHasBreak(e.target.checked)} />
@@ -1038,27 +1108,20 @@ function OnboardingForm({ role, onBack, onSubmit, initialValues }) {
               </div>
             )}
 
-            <label className="tm-checkbox-row">
-              <input type="checkbox" checked={laz} onChange={e => setLaz(e.target.checked)} />
-              LAZ (Landesausbildungszentrum) – ja
-            </label>
-            {laz && (
-              <div className="tm-date-row">
-                <label className="tm-label tm-label--small">LAZ seit<input className="tm-input" type="date" max={TODAY_ISO} value={lazSince} onChange={e => setLazSince(e.target.value)} /></label>
-                <label className="tm-label tm-label--small">bis (leer = aktuell)<input className="tm-input" type="date" max={TODAY_ISO} value={lazUntil} onChange={e => setLazUntil(e.target.value)} /></label>
+            <div className="tm-fieldset-title">Förderzeiträume (LAZ-Vorstufe / LAZ / Nachwuchszentrum / Akademie)</div>
+            {foerderPeriods.map(p => (
+              <div key={p.id} className="tm-period-row">
+                <select className="tm-input" value={p.type} onChange={e => updateFoerderPeriod(p.id, { type: e.target.value })}>
+                  {FOERDER_TYPE_OPTIONS.map(o => <option key={o.code} value={o.code}>{o.label}</option>)}
+                </select>
+                <input className="tm-input tm-period-num" type="number" min="9" max="23" title="Start-Lebensjahr" value={p.startLebensjahr} onFocus={e => e.target.select()} onChange={e => updateFoerderPeriod(p.id, { startLebensjahr: Number(e.target.value) })} />
+                <span className="tm-period-label">ab Lj., für</span>
+                <input className="tm-input tm-period-num" type="number" min="1" max="15" title="Dauer in Jahren" value={p.years} onFocus={e => e.target.select()} onChange={e => updateFoerderPeriod(p.id, { years: Number(e.target.value) })} />
+                <span className="tm-period-label">Jahre</span>
+                <button type="button" className="tm-period-remove" onClick={() => removeFoerderPeriod(p.id)} aria-label="Zeitraum entfernen">×</button>
               </div>
-            )}
-
-            <label className="tm-checkbox-row">
-              <input type="checkbox" checked={academy} onChange={e => setAcademy(e.target.checked)} />
-              Akademie – ja
-            </label>
-            {academy && (
-              <div className="tm-date-row">
-                <label className="tm-label tm-label--small">Akademie seit<input className="tm-input" type="date" max={TODAY_ISO} value={academySince} onChange={e => setAcademySince(e.target.value)} /></label>
-                <label className="tm-label tm-label--small">bis (leer = aktuell)<input className="tm-input" type="date" max={TODAY_ISO} value={academyUntil} onChange={e => setAcademyUntil(e.target.value)} /></label>
-              </div>
-            )}
+            ))}
+            <button type="button" className="tm-link-btn" onClick={addFoerderPeriod}>+ Förderzeitraum hinzufügen</button>
 
             <label className="tm-checkbox-row">
               <input type="checkbox" checked={selfNoCompensationClaim} onChange={e => setSelfNoCompensationClaim(e.target.checked)} />
@@ -1252,7 +1315,7 @@ function DiscoverCard({ profile, myProfile, revealed, distanceKm, exitDirection,
             <>
               <div className="tm-fact-line"><span className="tm-fact-label">Position</span><span>{posByCode(profile.position)?.label} ({profile.position}){profile.secondaryPosition ? `, auch ${profile.secondaryPosition}` : ''}</span></div>
               <div className="tm-fact-line"><span className="tm-fact-label">Starker Fuß</span><span>{profile.strongFoot}</span></div>
-              <BadgeRow laz={profile.laz} academy={profile.academy} />
+              <BadgeRow foerderPeriods={profile.foerderPeriods} />
               <div className="tm-stat-block-title">Statistik – Erwachsenenbereich ({profile.leagueAdult})</div>
               <div className="tm-statchip-row">
                 <StatChip label="Einsätze" value={profile.statsAdult.einsaetze} />
@@ -1616,9 +1679,9 @@ function ProfileScreen({ profile, premiumDemo, onTogglePremium, onReset, onSignO
                 <div className="tm-fact-line"><span className="tm-fact-label">Position</span><span>{posByCode(profile.position)?.label} ({profile.position})</span></div>
                 <div className="tm-fact-line"><span className="tm-fact-label">Starker Fuß</span><span>{profile.strongFoot}</span></div>
                 <div className="tm-fact-line"><span className="tm-fact-label">Liga (Erwachsene)</span><span>{profile.leagueAdult}</span></div>
-                <div className="tm-fact-line"><span className="tm-fact-label">Fußball seit</span><span>{profile.startDate}</span></div>
+                <div className="tm-fact-line"><span className="tm-fact-label">Fußball seit</span><span>{profile.startDate || (profile.startAgeYears != null ? `${profile.startAgeYears}. Lebensjahr` : '–')}</span></div>
                 {profile.hasBreak && <div className="tm-fact-line"><span className="tm-fact-label">Pause</span><span>{profile.breakFrom} – {profile.breakTo}</span></div>}
-                <BadgeRow laz={profile.laz} academy={profile.academy} />
+                <BadgeRow foerderPeriods={profile.foerderPeriods} />
                 <div className="tm-statchip-row">
                   <StatChip label="Einsätze" value={profile.statsAdult.einsaetze} />
                   <StatChip label="Tore" value={profile.statsAdult.tore} />
@@ -2321,6 +2384,14 @@ const CSS = `
   border: 1px solid var(--line); color: var(--chalk-dim); border-radius: 9px; padding: 9px 10px; font-size: 13px; cursor: pointer;
 }
 .tm-gender-btn--active { border-color: var(--floodlight); color: var(--floodlight); background: rgba(244,195,97,0.08); }
+.tm-mode-toggle { display: flex; gap: 6px; margin-bottom: 4px; }
+.tm-mode-btn { background: none; border: 1px solid var(--line); color: var(--chalk-dim); border-radius: 20px; padding: 3px 10px; font-size: 11px; cursor: pointer; }
+.tm-mode-btn--active { border-color: var(--floodlight); color: var(--floodlight); }
+.tm-period-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.tm-period-row .tm-input { flex: 1; min-width: 120px; }
+.tm-period-num { flex: 0 0 60px !important; min-width: 60px !important; text-align: center; }
+.tm-period-label { font-size: 11.5px; color: var(--chalk-dim); white-space: nowrap; }
+.tm-period-remove { background: none; border: 1px solid var(--line); color: var(--chalk-dim); border-radius: 7px; width: 28px; height: 28px; cursor: pointer; font-size: 15px; line-height: 1; flex-shrink: 0; }
 .tm-gender-badge { display: inline-flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; }
 .tm-gender-badge--männlich { color: #6FA8DC; }
 .tm-gender-badge--weiblich { color: #E37FB0; }
