@@ -1794,6 +1794,159 @@ function ProfileScreen({ profile, premiumDemo, onTogglePremium, onReset, onSignO
   );
 }
 
+/* ---------------------------- AE-Kalkulator (Admin-Vorschau) ---------------------------- */
+/* Interne Vorschau des eigenständigen ae-kalkulator-Spin-offs, direkt im
+   Admin-Bereich eingebettet, damit er ohne separates Deployment online
+   getestet und gezeigt werden kann, bevor er im Store veröffentlicht wird.
+   Nutzt bewusst dieselben Konstanten/Funktionen (calcAusbildungsentschaedigung,
+   FOERDER_TYPES, buildFoerderPeriods, AUSTRIA_LEAGUES, ...) wie der Rest von
+   wechsel-app statt einer eigenen Kopie - beide Apps müssen synchron bleiben. */
+function AEKalkulatorTool({ onBack }) {
+  const [birthMode, setBirthMode] = useState('age');
+  const [birthDateInput, setBirthDateInput] = useState('');
+  const [ageInput, setAgeInput] = useState('');
+  const [gender, setGender] = useState('männlich');
+  const [startMode, setStartMode] = useState('date');
+  const [startDate, setStartDate] = useState('');
+  const [startAgeInput, setStartAgeInput] = useState('');
+  const [hasBreak, setHasBreak] = useState(false);
+  const [breakFrom, setBreakFrom] = useState('');
+  const [breakTo, setBreakTo] = useState('');
+  const [selfNoCompensationClaim, setSelfNoCompensationClaim] = useState(false);
+  const [targetLeague, setTargetLeague] = useState(AUSTRIA_LEAGUE_LABELS[0]);
+  const [foerderYears, setFoerderYears] = useState({ lazVorstufe: 0, laz: 0, nachwuchszentrum: 0, akademie: 0 });
+
+  const birthDate = birthMode === 'date' ? birthDateInput : (ageInput !== '' ? `${new Date().getFullYear() - Number(ageInput)}-01-01` : '');
+  const startAgeForPeriods = startMode === 'age' && startAgeInput !== ''
+    ? Number(startAgeInput)
+    : (startMode === 'date' && startDate && birthDate ? calcAge(birthDate, startDate) : 9);
+  const foerderPeriods = buildFoerderPeriods(foerderYears, startAgeForPeriods);
+  const foerderBonusRows = FOERDER_ORDER
+    .filter(code => Number(foerderYears[code]) > 0)
+    .map(code => ({ code, label: FOERDER_TYPES[code].label, years: Number(foerderYears[code]), amount: FOERDER_TYPES[code].amount * Number(foerderYears[code]) }));
+
+  const player = {
+    birthDate, gender,
+    startDate: startMode === 'date' ? startDate : undefined,
+    startAgeYears: startMode === 'age' && startAgeInput !== '' ? Number(startAgeInput) : undefined,
+    hasBreak, breakFrom, breakTo, selfNoCompensationClaim, foerderPeriods,
+  };
+  const ready = Boolean(birthDate && (startMode === 'date' ? startDate : startAgeInput !== ''));
+  const result = ready ? calcAusbildungsentschaedigung(player, levelForLeague(targetLeague)) : null;
+
+  return (
+    <div className="tm-screen">
+      <button className="tm-back-link" onClick={onBack}><ChevronLeft size={16} /> Zurück</button>
+      <h2 className="tm-h2">AE-Kalkulator (Vorschau)</h2>
+      <div className="tm-empty" style={{ padding: '0 0 4px', textAlign: 'left' }}>
+        Interne Vorschau der eigenständigen Store-App, bevor sie veröffentlicht wird.
+      </div>
+
+      <form className="tm-form" onSubmit={e => e.preventDefault()}>
+        <div className="tm-label">Geburtsdatum / Alter
+          <ModeToggle mode={birthMode} onChange={setBirthMode} dateLabel="Datum" otherLabel="Alter" />
+          {birthMode === 'date' ? (
+            <input className="tm-input" type="date" max={TODAY_ISO} value={birthDateInput} onChange={e => setBirthDateInput(e.target.value)} />
+          ) : (
+            <input className="tm-input" type="number" min="0" max="60" placeholder="Alter in Jahren" value={ageInput} onFocus={e => e.target.select()} onChange={e => setAgeInput(e.target.value)} />
+          )}
+        </div>
+
+        <div className="tm-label">Geschlecht
+          <div className="tm-gender-row">
+            <button type="button" className={'tm-gender-btn' + (gender === 'männlich' ? ' tm-gender-btn--active' : '')} onClick={() => setGender('männlich')}>♂ Männlich</button>
+            <button type="button" className={'tm-gender-btn' + (gender === 'weiblich' ? ' tm-gender-btn--active' : '')} onClick={() => setGender('weiblich')}>♀ Weiblich</button>
+          </div>
+        </div>
+
+        <div className="tm-label">Beginn Fußballspielen
+          <ModeToggle mode={startMode} onChange={setStartMode} dateLabel="Datum" otherLabel="Alter damals" />
+          {startMode === 'date' ? (
+            <input className="tm-input" type="date" max={TODAY_ISO} value={startDate} onChange={e => setStartDate(e.target.value)} />
+          ) : (
+            <input className="tm-input" type="number" min="0" max="30" placeholder="Alter in Jahren" value={startAgeInput} onFocus={e => e.target.select()} onChange={e => setStartAgeInput(e.target.value)} />
+          )}
+        </div>
+
+        <label className="tm-checkbox-row">
+          <input type="checkbox" checked={hasBreak} onChange={e => setHasBreak(e.target.checked)} />
+          Pause von mehr als 18 Monaten ohne Spielbetrieb
+        </label>
+        {hasBreak && (
+          <div className="tm-date-row">
+            <label className="tm-label tm-label--small">Pause von<input className="tm-input" type="date" max={TODAY_ISO} value={breakFrom} onChange={e => setBreakFrom(e.target.value)} /></label>
+            <label className="tm-label tm-label--small">bis<input className="tm-input" type="date" max={TODAY_ISO} value={breakTo} onChange={e => setBreakTo(e.target.value)} /></label>
+          </div>
+        )}
+
+        <label className="tm-checkbox-row">
+          <input type="checkbox" checked={selfNoCompensationClaim} onChange={e => setSelfNoCompensationClaim(e.target.checked)} />
+          Keine Ausbildungsentschädigung (Selbstauskunft/Verzicht des bisherigen Vereins)
+        </label>
+
+        <div className="tm-fieldset-title">Förderzeiträume (Jahre je Kategorie, 0 = nicht zutreffend)</div>
+        <div className="tm-period-block">
+          {FOERDER_ORDER.map(code => (
+            <div key={code} className="tm-period-row">
+              <span className="tm-period-type-label">{FOERDER_TYPES[code].label}</span>
+              <input
+                className="tm-input tm-period-num" type="number" min="0" max="15"
+                value={foerderYears[code]} onFocus={e => e.target.select()}
+                onChange={e => setFoerderYears(prev => ({ ...prev, [code]: Number(e.target.value) }))}
+              />
+              <span className="tm-period-label">Jahre</span>
+            </div>
+          ))}
+        </div>
+
+        {foerderBonusRows.length > 0 && (
+          <div className="tm-extra-block">
+            <div className="tm-fieldset-title">Förderbonus gesamt</div>
+            {foerderBonusRows.map(r => (
+              <div key={r.code} className="tm-bonus-row">
+                <span className="tm-bonus-row-label">{r.label} ({r.years} {r.years === 1 ? 'Jahr' : 'Jahre'})</span>
+                <span className="tm-bonus-row-amount">{formatEuro(r.amount)}</span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div className="tm-extra-block">
+          <label className="tm-label">Leistungsstufe des aufnehmenden Vereins
+            <select className="tm-input" value={targetLeague} onChange={e => setTargetLeague(e.target.value)}>
+              {AUSTRIA_LEAGUE_LABELS.map(l => <option key={l} value={l}>{l}</option>)}
+            </select>
+          </label>
+        </div>
+      </form>
+
+      {!ready ? (
+        <div className="tm-empty">Bitte Geburtsdatum/Alter und Beginn Fußballspielen angeben.</div>
+      ) : (
+        <>
+          <AEBox aeInfo={result} title={`Geschätzte Ausbildungsentschädigung für ${targetLeague}`} />
+          {!result.zeroReason && result.breakdown.length > 0 && (
+            <div className="tm-admin-table-wrap">
+              <table className="tm-admin-table">
+                <thead><tr><th>Lebensjahr</th><th>Basis</th><th>Betrag</th></tr></thead>
+                <tbody>
+                  {result.breakdown.map(r => (
+                    <tr key={r.lebensjahr}>
+                      <td>{r.lebensjahr}.</td>
+                      <td>{formatEuro(r.base)}</td>
+                      <td>{formatEuro(r.yearTotal)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
 /* ---------------------------- Admin-Tab ---------------------------- */
 /* Nur sichtbar/aufrufbar für ADMIN_EMAILS. Der eigentliche Zugriffsschutz
    liegt in der Datenbank (RLS-Policies + is_admin()-Check in
@@ -1811,6 +1964,7 @@ function AdminScreen() {
   const [messages, setMessages] = useState([]);
   const [isCreatingProfile, setIsCreatingProfile] = useState(false);
   const [creatingRole, setCreatingRole] = useState(null);
+  const [showAEKalkulator, setShowAEKalkulator] = useState(false);
 
   async function loadAdminData() {
     setLoading(true);
@@ -1849,6 +2003,10 @@ function AdminScreen() {
     return <OnboardingForm role={creatingRole} onBack={() => setCreatingRole(null)} onSubmit={handleCreateTestProfile} />;
   }
 
+  if (showAEKalkulator) {
+    return <AEKalkulatorTool onBack={() => setShowAEKalkulator(false)} />;
+  }
+
   if (loading) return <div className="tm-screen"><div className="tm-empty">Admin-Daten werden geladen …</div></div>;
   if (error) return <div className="tm-screen"><div className="tm-error" style={{ whiteSpace: 'pre-line' }}>{error}</div></div>;
 
@@ -1873,6 +2031,9 @@ function AdminScreen() {
       <h2 className="tm-h2">Admin</h2>
       <button type="button" className="tm-btn" onClick={() => setIsCreatingProfile(true)}>
         <Plus size={14} /> Testprofil anlegen (Verein/Spieler/Staff, ohne echtes Konto)
+      </button>
+      <button type="button" className="tm-btn" onClick={() => setShowAEKalkulator(true)}>
+        <Euro size={14} /> AE-Kalkulator (Store-App-Vorschau)
       </button>
       <div className="tm-statchip-row">
         <StatChip label="Nutzer:innen" value={users.length} />
@@ -2503,6 +2664,12 @@ const CSS = `
 .tm-ae-caption { font-size: 9.5px; color: var(--ink-dim); margin-top: 3px; line-height: 1.4; }
 
 .tm-ae-table-wrap { background: var(--pitch-night); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; }
+
+.tm-extra-block { background: var(--pitch-night); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; }
+.tm-bonus-row { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; margin-top: 8px; font-size: 13px; }
+.tm-bonus-row:first-of-type { margin-top: 4px; }
+.tm-bonus-row-label { color: var(--chalk-dim); }
+.tm-bonus-row-amount { font-family: 'IBM Plex Mono', monospace; font-weight: 600; color: var(--floodlight); white-space: nowrap; }
 .tm-ae-subnote { font-size: 12px; color: var(--chalk-dim); line-height: 1.5; margin-top: 4px; }
 .tm-ae-table { width: 100%; border-collapse: collapse; margin-top: 6px; font-size: 13px; }
 .tm-ae-table td { padding: 5px 0; border-bottom: 1px solid var(--line); }
