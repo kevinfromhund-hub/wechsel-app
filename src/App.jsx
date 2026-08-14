@@ -13,7 +13,7 @@ const ACTIVE_PROFILE_STORAGE_KEY = 'wechsel_active_profile_id';
 /* Muss mit is_admin() in supabase/admin_migration.sql übereinstimmen. Rein
    clientseitig nur für die Sichtbarkeit des Admin-Tabs relevant - der
    eigentliche Zugriffsschutz läuft über die Datenbank-Policies. */
-const ADMIN_EMAILS = ['kevin.fromhund@hotmail.com'];
+const ADMIN_EMAILS = ['kevin.fromhund@hotmail.com', 'darckandy.sport@gmail.com'];
 
 /* ============================================================================
    WECHSEL. — Transfer-Matching-App für den Amateurfußball (Österreich)
@@ -1381,6 +1381,7 @@ function DiscoverCard({ profile, myProfile, revealed, distanceKm, exitDirection,
             <>
               <div className="tm-fact-line"><span className="tm-fact-label">Position</span><span>{posByCode(profile.position)?.label} ({profile.position}){profile.secondaryPosition ? `, auch ${profile.secondaryPosition}` : ''}</span></div>
               <div className="tm-fact-line"><span className="tm-fact-label">Starker Fuß</span><span>{profile.strongFoot}</span></div>
+              {profile.citizenship && <div className="tm-fact-line"><span className="tm-fact-label">Staatsbürgerschaft</span><span>{profile.citizenship}</span></div>}
               <BadgeRow foerderPeriods={profile.foerderPeriods} />
               <div className="tm-stat-block-title">Statistik – Erwachsenenbereich ({profile.leagueAdult})</div>
               <div className="tm-statchip-row">
@@ -1422,6 +1423,7 @@ function DiscoverCard({ profile, myProfile, revealed, distanceKm, exitDirection,
               {profile.staffType === 'trainer' && profile.highestLeague && (
                 <div className="tm-fact-line"><span className="tm-fact-label">Höchste trainierte Liga</span><span>{profile.highestLeague}</span></div>
               )}
+              {profile.citizenship && <div className="tm-fact-line"><span className="tm-fact-label">Staatsbürgerschaft</span><span>{profile.citizenship}</span></div>}
             </>
           )}
           {aeInfo && <AEBox aeInfo={aeInfo} title={aeTitle} />}
@@ -1744,6 +1746,7 @@ function ProfileScreen({ profile, premiumDemo, onTogglePremium, onReset, onSignO
               <>
                 <div className="tm-fact-line"><span className="tm-fact-label">Position</span><span>{posByCode(profile.position)?.label} ({profile.position})</span></div>
                 <div className="tm-fact-line"><span className="tm-fact-label">Starker Fuß</span><span>{profile.strongFoot}</span></div>
+                {profile.citizenship && <div className="tm-fact-line"><span className="tm-fact-label">Staatsbürgerschaft</span><span>{profile.citizenship}</span></div>}
                 <div className="tm-fact-line"><span className="tm-fact-label">Liga (Erwachsene)</span><span>{profile.leagueAdult}</span></div>
                 <div className="tm-fact-line"><span className="tm-fact-label">Fußball seit</span><span>{profile.startDate || (profile.startAgeYears != null ? `${profile.startAgeYears}. Lebensjahr` : '–')}</span></div>
                 {profile.hasBreak && <div className="tm-fact-line"><span className="tm-fact-label">Pause</span><span>{profile.breakFrom} – {profile.breakTo}</span></div>}
@@ -1774,6 +1777,7 @@ function ProfileScreen({ profile, premiumDemo, onTogglePremium, onReset, onSignO
                 {profile.staffType === 'physio' && profile.earliestAppointmentWeeks != null && (
                   <div className="tm-fact-line"><span className="tm-fact-label">Frühester Termin</span><span>in {profile.earliestAppointmentWeeks} Wochen</span></div>
                 )}
+                {profile.citizenship && <div className="tm-fact-line"><span className="tm-fact-label">Staatsbürgerschaft</span><span>{profile.citizenship}</span></div>}
               </>
             )}
           </div>

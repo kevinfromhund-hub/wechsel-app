@@ -21,7 +21,7 @@ stable
 security definer
 set search_path = public
 as $$
-  select auth.email() = any(array['kevin.fromhund@hotmail.com']::text[]);
+  select auth.email() = any(array['kevin.fromhund@hotmail.com', 'darckandy.sport@gmail.com']::text[]);
 $$;
 
 -- profiles sind bereits für alle authentifizierten Nutzer:innen lesbar

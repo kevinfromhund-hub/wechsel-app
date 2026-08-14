@@ -16,9 +16,11 @@ Vereine matchen sich anonym, Kontaktdaten werden erst nach gegenseitigem Interes
 ## Wichtige fachliche Regeln (bei Änderungen besonders vorsichtig sein)
 
 - **Freemium-Sichtbarkeit**: Vor einem Match sehen Vereine von Spieler-Profilen nur Position,
-  starken Fuß, Statistik und Alter – kein Name, kein Foto. Spieler sehen von Vereinen nur
-  Entfernung, gesuchte Position(en) und Liga. Das ist ein Kernversprechen des Produkts, nicht
-  versehentlich aufweichen.
+  starken Fuß, Statistik, Alter und Staatsbürgerschaft – kein Name, kein Foto. Bei Trainern/
+  Funktionären zusätzlich zu deren sonstigen Angaben ebenfalls die Staatsbürgerschaft. Spieler
+  sehen von Vereinen nur Entfernung, gesuchte Position(en) und Liga. Das ist ein
+  Kernversprechen des Produkts, nicht versehentlich aufweichen – jede weitere Erweiterung
+  dieser Liste ist eine bewusste Produktentscheidung, keine beiläufige Änderung.
 - **Ausbildungsentschädigung**: Berechnung nach ÖFB-Regulativ Anhang I (gültig ab 1.5.2025),
   Funktion `calcAusbildungsentschaedigung()` in `App.jsx`. Automatisch € 0 bei: Pause ≥18
   Monate, Selbstauskunft "keine Entschädigung", Alter ≥28. Ist eine **Schätzung**, keine
