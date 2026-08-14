@@ -356,7 +356,7 @@ function generateDemoPlayer(index, sessionSeed) {
   return {
     id: `seed-${sessionSeed}-player-${index}`,
     role: 'player',
-    name: `${randChoice(DEMO_FIRST_NAMES)} ${randChoice(DEMO_LAST_NAMES)}`,
+    name: `${randChoice(DEMO_FIRST_NAMES)} ${randChoice(DEMO_LAST_NAMES)} (DEMO)`,
     birthDate, position, secondaryPosition,
     strongFoot: randChoice(FEET),
     location: { label: cityName, lat: coords[0], lng: coords[1] },
@@ -387,7 +387,7 @@ function generateDemoClub(index, sessionSeed) {
   return {
     id: `seed-${sessionSeed}-club-${index}`,
     role: 'club',
-    clubName,
+    clubName: `${clubName} (DEMO)`,
     contactPerson: `${randChoice(DEMO_FIRST_NAMES)} ${randChoice(DEMO_LAST_NAMES)}`,
     location: { label: cityName, lat: coords[0], lng: coords[1] },
     league: searchedGender !== 'weiblich' ? randChoice(AUSTRIA_LEAGUE_LABELS) : '',
@@ -407,7 +407,7 @@ function generateDemoStaffPerson(index, sessionSeed) {
     id: `seed-${sessionSeed}-staff-${index}`,
     role: 'staff',
     staffType,
-    name: `${randChoice(DEMO_FIRST_NAMES)} ${randChoice(DEMO_LAST_NAMES)}`,
+    name: `${randChoice(DEMO_FIRST_NAMES)} ${randChoice(DEMO_LAST_NAMES)} (DEMO)`,
     birthDate: randomBirthDate(22, 58),
     location: { label: cityName, lat: coords[0], lng: coords[1] },
     yearsExperience: randInt(1, 20),
@@ -1350,7 +1350,8 @@ function DiscoverCard({ profile, myProfile, revealed, distanceKm, exitDirection,
     aeTitle = 'Das müsste dieser Verein für dich zahlen';
   }
 
-  const stampLabel = isPlayerCard ? 'SPIELERAKTE' : isStaffCard ? (staffMeta?.label || 'Staff').toUpperCase() : 'GESUCH';
+  const isDemoProfile = profile.id?.startsWith('seed-');
+  const stampLabel = (isDemoProfile ? 'DEMO · ' : '') + (isPlayerCard ? 'SPIELERAKTE' : isStaffCard ? (staffMeta?.label || 'Staff').toUpperCase() : 'GESUCH');
 
   return (
     <div className="tm-card tm-swipecard" style={style}
@@ -2025,6 +2026,8 @@ function AdminScreen() {
   const [isCreatingProfile, setIsCreatingProfile] = useState(false);
   const [creatingRole, setCreatingRole] = useState(null);
   const [showAEKalkulator, setShowAEKalkulator] = useState(false);
+  const [confirmDeleteTestProfiles, setConfirmDeleteTestProfiles] = useState(false);
+  const [deletingTestProfiles, setDeletingTestProfiles] = useState(false);
 
   async function loadAdminData() {
     setLoading(true);
@@ -2051,6 +2054,21 @@ function AdminScreen() {
     setCreatingRole(null);
     setIsCreatingProfile(false);
     loadAdminData();
+  }
+
+  /* Testprofile = ohne echtes Konto angelegt (user_id null, siehe
+     adminCreateProfile). Löscht ausschließlich diese, echte Nutzerprofile
+     bleiben unangetastet. */
+  const testProfiles = profiles.filter(p => !p.user_id);
+  async function handleDeleteTestProfiles() {
+    setDeletingTestProfiles(true);
+    try {
+      await Promise.all(testProfiles.map(p => deleteProfile(p.id)));
+      setConfirmDeleteTestProfiles(false);
+      await loadAdminData();
+    } finally {
+      setDeletingTestProfiles(false);
+    }
   }
 
   /* Test-Vereine/-Spieler/-Staff anlegen, die an keinem echten Konto hängen
@@ -2095,6 +2113,21 @@ function AdminScreen() {
       <button type="button" className="tm-btn" onClick={() => setShowAEKalkulator(true)}>
         <Euro size={14} /> AE-Kalkulator (Store-App-Vorschau)
       </button>
+      {testProfiles.length > 0 && (
+        !confirmDeleteTestProfiles ? (
+          <button type="button" className="tm-btn tm-btn--danger" onClick={() => setConfirmDeleteTestProfiles(true)}>
+            <RotateCcw size={14} /> Alle Testprofile löschen ({testProfiles.length})
+          </button>
+        ) : (
+          <div className="tm-confirm-row">
+            <span>{testProfiles.length} Testprofil(e) wirklich unwiderruflich löschen?</span>
+            <button className="tm-btn tm-btn--danger" onClick={handleDeleteTestProfiles} disabled={deletingTestProfiles}>
+              {deletingTestProfiles ? 'Löscht …' : 'Ja, löschen'}
+            </button>
+            <button className="tm-btn" onClick={() => setConfirmDeleteTestProfiles(false)} disabled={deletingTestProfiles}>Abbrechen</button>
+          </div>
+        )
+      )}
       <div className="tm-statchip-row">
         <StatChip label="Nutzer:innen" value={users.length} />
         <StatChip label="Profile" value={profiles.length} />
