@@ -100,6 +100,44 @@ function levelForLeague(label) {
 const LEAGUES_YOUTH = ['Landesliga (Nachwuchs)', 'Regionalliga (Nachwuchs)', 'ÖFB-Nachwuchsbundesliga'];
 const FEET = ['rechts', 'links', 'beidfüßig'];
 
+/* Alle Staaten (UN-Mitgliedsstaaten + einige weithin anerkannte Gebiete wie
+   Kosovo/Taiwan/Vatikanstadt), deutsche Bezeichnungen, Österreich zuerst als
+   häufigste Auswahl. */
+const COUNTRIES = [
+  'Österreich',
+  'Afghanistan', 'Ägypten', 'Albanien', 'Algerien', 'Andorra', 'Angola', 'Antigua und Barbuda', 'Äquatorialguinea',
+  'Argentinien', 'Armenien', 'Aserbaidschan', 'Äthiopien', 'Australien',
+  'Bahamas', 'Bahrain', 'Bangladesch', 'Barbados', 'Belarus', 'Belgien', 'Belize', 'Benin', 'Bhutan', 'Bolivien',
+  'Bosnien und Herzegowina', 'Botsuana', 'Brasilien', 'Brunei', 'Bulgarien', 'Burkina Faso', 'Burundi',
+  'Chile', 'China', 'Costa Rica', "Côte d'Ivoire",
+  'Dänemark', 'Deutschland', 'Dominica', 'Dominikanische Republik', 'Dschibuti',
+  'Ecuador', 'El Salvador', 'Eritrea', 'Estland', 'Eswatini',
+  'Fidschi', 'Finnland', 'Frankreich',
+  'Gabun', 'Gambia', 'Georgien', 'Ghana', 'Grenada', 'Griechenland', 'Guatemala', 'Guinea', 'Guinea-Bissau', 'Guyana',
+  'Haiti', 'Honduras',
+  'Indien', 'Indonesien', 'Irak', 'Iran', 'Irland', 'Island', 'Israel', 'Italien',
+  'Jamaika', 'Japan', 'Jemen', 'Jordanien',
+  'Kambodscha', 'Kamerun', 'Kanada', 'Kap Verde', 'Kasachstan', 'Katar', 'Kenia', 'Kirgisistan', 'Kiribati',
+  'Kolumbien', 'Komoren', 'Kongo (Republik)', 'Kongo (Demokratische Republik)', 'Kosovo', 'Kroatien', 'Kuba', 'Kuwait',
+  'Laos', 'Lesotho', 'Lettland', 'Libanon', 'Liberia', 'Libyen', 'Liechtenstein', 'Litauen', 'Luxemburg',
+  'Madagaskar', 'Malawi', 'Malaysia', 'Malediven', 'Mali', 'Malta', 'Marokko', 'Marshallinseln', 'Mauretanien',
+  'Mauritius', 'Mexiko', 'Mikronesien', 'Moldau', 'Monaco', 'Mongolei', 'Montenegro', 'Mosambik', 'Myanmar',
+  'Namibia', 'Nauru', 'Nepal', 'Neuseeland', 'Nicaragua', 'Niederlande', 'Niger', 'Nigeria', 'Nordkorea',
+  'Nordmazedonien', 'Norwegen',
+  'Oman', 'Osttimor',
+  'Pakistan', 'Palau', 'Panama', 'Papua-Neuguinea', 'Paraguay', 'Peru', 'Philippinen', 'Polen', 'Portugal',
+  'Ruanda', 'Rumänien', 'Russland',
+  'Salomonen', 'Sambia', 'Samoa', 'San Marino', 'São Tomé und Príncipe', 'Saudi-Arabien', 'Schweden', 'Schweiz',
+  'Senegal', 'Serbien', 'Seychellen', 'Sierra Leone', 'Simbabwe', 'Singapur', 'Slowakei', 'Slowenien', 'Somalia',
+  'Spanien', 'Sri Lanka', 'St. Kitts und Nevis', 'St. Lucia', 'St. Vincent und die Grenadinen', 'Südafrika',
+  'Sudan', 'Südkorea', 'Südsudan', 'Suriname', 'Syrien',
+  'Tadschikistan', 'Taiwan', 'Tansania', 'Thailand', 'Togo', 'Tonga', 'Trinidad und Tobago', 'Tschad',
+  'Tschechien', 'Tunesien', 'Türkei', 'Turkmenistan', 'Tuvalu',
+  'Uganda', 'Ukraine', 'Ungarn', 'Uruguay', 'USA', 'Usbekistan',
+  'Vanuatu', 'Vatikanstadt', 'Venezuela', 'Vereinigte Arabische Emirate', 'Vereinigtes Königreich', 'Vietnam',
+  'Zentralafrikanische Republik', 'Zypern',
+];
+
 const TODAY_ISO = new Date().toISOString().slice(0, 10);
 
 /* ---------------------------- Staff-Rollen (Trainer, Funktionär, Physio, Masseur) ---------------------------- */
@@ -916,6 +954,7 @@ function OnboardingForm({ role, onBack, onSubmit, initialValues }) {
   const [needsPhysio, setNeedsPhysio] = useState(initialValues?.needsPhysio || false);
   const [needsMasseur, setNeedsMasseur] = useState(initialValues?.needsMasseur || false);
   const [gender, setGender] = useState(initialValues?.gender || '');
+  const [citizenship, setCitizenship] = useState(initialValues?.citizenship || '');
 
   const [startMode, setStartMode] = useState(initialValues?.startAgeYears != null && !initialValues?.startDate ? 'age' : 'date');
   const [startDate, setStartDate] = useState(initialValues?.startDate || '');
@@ -982,7 +1021,7 @@ function OnboardingForm({ role, onBack, onSubmit, initialValues }) {
         setErr('Bitte gib den Pause-Zeitraum korrekt an (bis muss nach von liegen).'); return;
       }
       onSubmit({
-        name: fullName, firstName: firstName.trim(), lastName: lastName.trim(), gender, birthDate: effectiveBirthDate, position, secondaryPosition, strongFoot, location, leagueAdult, statsAdult,
+        name: fullName, firstName: firstName.trim(), lastName: lastName.trim(), gender, citizenship, birthDate: effectiveBirthDate, position, secondaryPosition, strongFoot, location, leagueAdult, statsAdult,
         leagueYouth: hasYouth ? leagueYouth : '', statsYouth: hasYouth ? statsYouth : { einsaetze: 0, tore: 0, vorlagen: 0 },
         startDate: startMode === 'date' ? startDate : '', startAgeYears: startMode === 'age' && startAgeInput !== '' ? Number(startAgeInput) : undefined,
         hasBreak, breakFrom: hasBreak ? breakFrom : '', breakTo: hasBreak ? breakTo : '',
@@ -996,6 +1035,7 @@ function OnboardingForm({ role, onBack, onSubmit, initialValues }) {
       }
       onSubmit({
         name: fullName, firstName: firstName.trim(), lastName: lastName.trim(), birthDate: effectiveBirthDate, staffType, qualification, yearsExperience, location,
+        citizenship: (staffType === 'trainer' || staffType === 'funktionaer') ? citizenship : undefined,
         earliestAppointmentWeeks: staffType === 'physio' && earliestAppointmentWeeks !== '' ? Number(earliestAppointmentWeeks) : undefined,
         highestLeague: staffType === 'trainer' ? highestLeague : undefined,
         privacyConsentAt: initialValues?.privacyConsentAt || Date.now(), parentalConsent: isMinor ? true : false,
@@ -1045,6 +1085,12 @@ function OnboardingForm({ role, onBack, onSubmit, initialValues }) {
                 <input className="tm-input" type="number" min="0" max="60" placeholder="Alter in Jahren" value={ageInput} onFocus={e => e.target.select()} onChange={e => setAgeInput(e.target.value)} />
               )}
             </div>
+            <label className="tm-label">Staatsbürgerschaft
+              <select className="tm-input" value={citizenship} onChange={e => setCitizenship(e.target.value)}>
+                <option value="">— wählen —</option>
+                {COUNTRIES.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </label>
             <label className="tm-label">Hauptposition
               <select className="tm-input" value={position} onChange={e => setPosition(e.target.value)}>
                 <option value="">— wählen —</option>
@@ -1163,6 +1209,14 @@ function OnboardingForm({ role, onBack, onSubmit, initialValues }) {
                 {STAFF_TYPES.map(t => <option key={t.code} value={t.code}>{t.label}</option>)}
               </select>
             </label>
+            {(staffType === 'trainer' || staffType === 'funktionaer') && (
+              <label className="tm-label">Staatsbürgerschaft
+                <select className="tm-input" value={citizenship} onChange={e => setCitizenship(e.target.value)}>
+                  <option value="">— wählen —</option>
+                  {COUNTRIES.map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </label>
+            )}
             {staffType && (
               <label className="tm-label">{staffQualificationLabel(staffType)}
                 <select className="tm-input" value={qualification} onChange={e => setQualification(e.target.value)}>
@@ -1654,7 +1708,7 @@ function ChatScreen({ matchId, partnerProfile, myId, onBack }) {
 
 /* ---------------------------- Profil-Tab ---------------------------- */
 
-function ProfileScreen({ profile, premiumDemo, onTogglePremium, onReset, onSignOut, onAddProfile, onEditProfile, hasOtherProfiles }) {
+function ProfileScreen({ profile, premiumDemo, onTogglePremium, onReset, onSignOut, onAddProfile, onEditProfile, hasOtherProfiles, isAdmin }) {
   const [confirmReset, setConfirmReset] = useState(false);
   const [showPrivacy, setShowPrivacy] = useState(false);
   const isPlayer = profile.role === 'player';
@@ -1752,15 +1806,17 @@ function ProfileScreen({ profile, premiumDemo, onTogglePremium, onReset, onSignO
         </div>
       )}
 
-      <div className="tm-premium-toggle-row">
-        <div>
-          <div className="tm-card-name">Demo: Premium-Ansicht</div>
-          <div className="tm-card-sub">Zeigt simuliert, wie zahlende Nutzer Namen &amp; Fotos sehen würden. Keine echte Zahlung in diesem Prototyp.</div>
+      {isAdmin && (
+        <div className="tm-premium-toggle-row">
+          <div>
+            <div className="tm-card-name">Demo: Premium-Ansicht</div>
+            <div className="tm-card-sub">Zeigt simuliert, wie zahlende Nutzer Namen &amp; Fotos sehen würden. Keine echte Zahlung in diesem Prototyp.</div>
+          </div>
+          <button className={'tm-switch' + (premiumDemo ? ' tm-switch--on' : '')} onClick={onTogglePremium} aria-pressed={premiumDemo}>
+            <span className="tm-switch-knob" />
+          </button>
         </div>
-        <button className={'tm-switch' + (premiumDemo ? ' tm-switch--on' : '')} onClick={onTogglePremium} aria-pressed={premiumDemo}>
-          <span className="tm-switch-knob" />
-        </button>
-      </div>
+      )}
 
       <button type="button" className="tm-link-btn" onClick={() => setShowPrivacy(true)}>Datenschutzerklärung ansehen</button>
       {showPrivacy && <PolicyOverlay onClose={() => setShowPrivacy(false)} />}
@@ -2086,7 +2142,7 @@ function AdminScreen() {
 
 /* ---------------------------- Navigation & Overlays ---------------------------- */
 
-function TopBar({ premiumDemo, onTogglePremium, profiles, activeProfile, onSwitchProfile, onAddProfile }) {
+function TopBar({ premiumDemo, onTogglePremium, profiles, activeProfile, onSwitchProfile, onAddProfile, isAdmin }) {
   const [switcherOpen, setSwitcherOpen] = useState(false);
   return (
     <div className="tm-topbar">
@@ -2115,9 +2171,11 @@ function TopBar({ premiumDemo, onTogglePremium, profiles, activeProfile, onSwitc
             )}
           </div>
         )}
-        <button className={'tm-chip' + (premiumDemo ? ' tm-chip--active' : '')} onClick={onTogglePremium}>
-          <ShieldCheck size={13} /> {premiumDemo ? 'Premium-Demo an' : 'Premium-Demo'}
-        </button>
+        {isAdmin && (
+          <button className={'tm-chip' + (premiumDemo ? ' tm-chip--active' : '')} onClick={onTogglePremium}>
+            <ShieldCheck size={13} /> {premiumDemo ? 'Premium-Demo an' : 'Premium-Demo'}
+          </button>
+        )}
       </div>
     </div>
   );
@@ -2426,6 +2484,7 @@ export default function App() {
           <TopBar
             premiumDemo={premiumDemo} onTogglePremium={() => setPremiumDemo(v => !v)}
             profiles={profiles} activeProfile={profile} onSwitchProfile={switchActiveProfile} onAddProfile={handleAddProfile}
+            isAdmin={isAdmin}
           />
           <main className="tm-main">
             {screen === 'discover' && (
@@ -2444,7 +2503,7 @@ export default function App() {
               <ProfileScreen
                 profile={profile} premiumDemo={premiumDemo} onTogglePremium={() => setPremiumDemo(v => !v)}
                 onReset={handleReset} onSignOut={handleSignOut} onAddProfile={handleAddProfile} onEditProfile={handleEditProfile}
-                hasOtherProfiles={profiles.length > 1}
+                hasOtherProfiles={profiles.length > 1} isAdmin={isAdmin}
               />
             )}
             {screen === 'admin' && isAdmin && <AdminScreen />}
