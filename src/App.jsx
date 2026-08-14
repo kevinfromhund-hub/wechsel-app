@@ -806,11 +806,13 @@ function LandingTeaser() {
       rafId = requestAnimationFrame(tick);
     }
 
-    if (reducedMotion) {
-      setActiveScene(0);
-    } else {
-      rafId = requestAnimationFrame(tick);
-    }
+    /* Reduced motion still advances through every scene on the same
+       timeline - the app's global CSS already strips the crossfade/slide
+       transitions in that case (see ".tm-root * { transition: none }"
+       below), so scenes just cut instantly instead of animating. Freezing
+       on scene 0 forever would withhold content from reduced-motion users
+       instead of just showing it without the motion. */
+    rafId = requestAnimationFrame(tick);
 
     return () => {
       stopped = true;
@@ -2851,13 +2853,20 @@ const CSS = `
 .tm-landing-footer { display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center; padding-top: 8px; border-top: 1px dashed var(--line); }
 
 /* ---------- Landing-Teaser (autoplay Handy-Vorschau) ---------- */
-.tm-teaser-stage-wrap { position: relative; width: 100%; max-width: 340px; aspect-ratio: 390 / 844; margin: 0 auto; }
+.tm-teaser-stage-wrap { position: relative; width: 100%; max-width: 340px; margin: 0 auto; aspect-ratio: 390 / 844; }
 .tm-teaser-stage {
   position: relative; width: 100%; height: 100%; overflow: hidden; border-radius: 30px;
   background:
     radial-gradient(ellipse 140% 70% at 50% -10%, rgba(244,195,97,0.16) 0%, transparent 55%),
     radial-gradient(circle at 50% 8%, #1b2530 0%, var(--pitch-night) 62%);
   box-shadow: 0 0 0 1px var(--line), 0 20px 50px -18px rgba(0,0,0,0.6);
+}
+/* Responsive fallback for browsers without aspect-ratio support (e.g. iOS < 15) -
+   without this the wrapper would collapse to 0 height and the whole teaser
+   would be invisible instead of just losing the crossfade animation. */
+@supports not (aspect-ratio: 1 / 1) {
+  .tm-teaser-stage-wrap::before { content: ''; display: block; padding-top: 216.4%; }
+  .tm-teaser-stage { position: absolute; inset: 0; }
 }
 .tt-wordmark {
   position: absolute; top: 22px; left: 16px; z-index: 3;
