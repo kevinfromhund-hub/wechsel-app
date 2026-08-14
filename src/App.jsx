@@ -10,6 +10,9 @@ import {
 
 const ACTIVE_PROFILE_STORAGE_KEY = 'wechsel_active_profile_id';
 
+const APP_VERSION = 'Beta 2.1';
+const TRIAL_END_LABEL = '01.10.2026';
+
 /* Muss mit is_admin() in supabase/admin_migration.sql übereinstimmen. Rein
    clientseitig nur für die Sichtbarkeit des Admin-Tabs relevant - der
    eigentliche Zugriffsschutz läuft über die Datenbank-Policies. */
@@ -720,12 +723,209 @@ function SetupScreen() {
   );
 }
 
+/* ---------------------------- Landing-Teaser (animierte Vorschau) ---------------------------- */
+/* Kleine autoplay-Vorschau der Kernfunktionen im Stil einer Handy-Aufnahme,
+   direkt in der Landingpage eingebettet (auch als eigenständiges HTML für
+   Social-Media-Aufnahmen genutzt - hier als React-Version mit denselben
+   Szenen/Timings, aber ohne die Aufnahme-Steuerung, da sie hier einfach
+   endlos für jede:n Besucher:in läuft). Rein dekorativ/imperativ (direkte
+   Klassenumschaltung per rAF statt React-State pro Frame), damit die Seite
+   nicht 60x/Sekunde neu rendert. */
+const TEASER_SCENES = [
+  { key: 's0', duration: 3000 },
+  { key: 's1', duration: 3000 },
+  { key: 's2', duration: 7000 },
+  { key: 's3', duration: 7000 },
+  { key: 's4', duration: 7000 },
+  { key: 's5', duration: 5000 },
+  { key: 's6', duration: 6000 },
+];
+
+function LandingTeaser() {
+  const stageRef = useRef(null);
+
+  useEffect(() => {
+    const stage = stageRef.current;
+    if (!stage) return;
+    const sceneEls = TEASER_SCENES.map(s => stage.querySelector('.tt-' + s.key));
+    const segFills = Array.prototype.slice.call(stage.querySelectorAll('.tt-seg-fill'));
+    const cumulative = [];
+    let acc = 0;
+    TEASER_SCENES.forEach(s => { cumulative.push(acc); acc += s.duration; });
+    const TOTAL = acc;
+
+    const reducedMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    let lastIndex = -1;
+    let startTime = null;
+    let rafId = null;
+    let stopped = false;
+
+    function setActiveScene(idx) {
+      if (idx === lastIndex) return;
+      sceneEls.forEach(el => el.classList.remove('tt-active'));
+      const el = sceneEls[idx];
+      void el.offsetWidth;
+      el.classList.add('tt-active');
+      lastIndex = idx;
+      if (TEASER_SCENES[idx].key === 's3') runCountUp();
+    }
+
+    function runCountUp() {
+      const el = stage.querySelector('.tt-ae-amount');
+      if (!el) return;
+      const target = 12400;
+      if (reducedMotion) { el.textContent = '€ ' + target.toLocaleString('de-AT'); return; }
+      const start = performance.now();
+      const dur = 1100;
+      function step(now) {
+        const t = Math.min(1, (now - start) / dur);
+        const eased = 1 - Math.pow(1 - t, 3);
+        el.textContent = '€ ' + Math.round(target * eased).toLocaleString('de-AT');
+        if (t < 1 && !stopped) requestAnimationFrame(step);
+      }
+      requestAnimationFrame(step);
+    }
+
+    function indexForElapsed(elapsed) {
+      for (let i = TEASER_SCENES.length - 1; i >= 0; i--) {
+        if (elapsed >= cumulative[i]) return i;
+      }
+      return 0;
+    }
+
+    function tick(now) {
+      if (stopped) return;
+      if (startTime === null) startTime = now;
+      const elapsed = (now - startTime) % TOTAL;
+      const idx = indexForElapsed(elapsed);
+      setActiveScene(idx);
+      const within = elapsed - cumulative[idx];
+      const pct = Math.min(100, (within / TEASER_SCENES[idx].duration) * 100);
+      if (segFills[idx]) segFills[idx].style.width = pct + '%';
+      rafId = requestAnimationFrame(tick);
+    }
+
+    if (reducedMotion) {
+      setActiveScene(0);
+    } else {
+      rafId = requestAnimationFrame(tick);
+    }
+
+    return () => {
+      stopped = true;
+      if (rafId !== null) cancelAnimationFrame(rafId);
+    };
+  }, []);
+
+  return (
+    <div className="tm-teaser-stage-wrap">
+      <div className="tm-teaser-stage" ref={stageRef}>
+        <div className="tt-wordmark">WECHSEL<span>.</span></div>
+        <div className="tt-progress-row">
+          {TEASER_SCENES.map(s => (
+            <div key={s.key} className="tt-seg"><div className="tt-seg-fill" /></div>
+          ))}
+        </div>
+
+        <div className="tt-scene tt-s0">
+          <div className="tt-hook-line1">VEREIN<br />WECHSELN?</div>
+          <div className="tt-hook-line2">Aber nicht, dass gleich das ganze Dorf davon weiß.</div>
+        </div>
+
+        <div className="tt-scene tt-s1">
+          <div className="tt-logo-big">WECHSEL<span>.</span></div>
+          <div className="tt-logo-tag">Das Transferportal für den<br />Amateurfußball in Österreich.</div>
+        </div>
+
+        <div className="tt-scene tt-s2">
+          <div className="tt-eyebrow">Funktion 1</div>
+          <div className="tt-swipe-zone">
+            <div className="tt-swipe-card">
+              <div className="tt-card-top-row">
+                <div className="tt-card-avatar"><User size={14} /></div>
+                <div className="tt-redacted-bar" />
+                <div className="tt-card-stamp">SPIELERAKTE</div>
+              </div>
+              <div className="tt-card-fact"><span>Position</span><b>ST</b></div>
+              <div className="tt-card-fact"><span>Starker Fuß</span><b>rechts</b></div>
+              <div className="tt-card-fact"><span>Alter</span><b>24</b></div>
+            </div>
+            <div className="tt-match-burst">
+              <div>
+                <Heart className="tt-heart" size={40} fill="currentColor" />
+                <div className="tt-match-text">MATCH!</div>
+              </div>
+            </div>
+          </div>
+          <div className="tt-headline">ANONYM BIS<br />ZUM MATCH.</div>
+          <div className="tt-subline">Kein Name, kein Foto — bis beide Seiten Interesse zeigen.</div>
+        </div>
+
+        <div className="tt-scene tt-s3">
+          <div className="tt-eyebrow">Funktion 2</div>
+          <div className="tt-ae-card">
+            <div className="tt-ae-label">Geschätzte Ausbildungsentschädigung</div>
+            <div className="tt-ae-amount">€ 0</div>
+            <div className="tt-ae-caption">für Regionalliga</div>
+          </div>
+          <table className="tt-ae-table">
+            <thead><tr><th>Lebensjahr</th><th>Basis</th><th>Betrag</th></tr></thead>
+            <tbody>
+              <tr><td>16.</td><td>€ 700</td><td>€ 980</td></tr>
+              <tr><td>17.</td><td>€ 750</td><td>€ 1&nbsp;050</td></tr>
+              <tr><td>18.</td><td>€ 850</td><td>€ 1&nbsp;190</td></tr>
+            </tbody>
+          </table>
+          <div className="tt-headline" style={{ marginTop: 16 }}>AUSBILDUNGS-<br />ENTSCHÄDIGUNG?</div>
+          <div className="tt-subline">Automatisch geschätzt. Keine Excel-Tabellen mehr.</div>
+        </div>
+
+        <div className="tt-scene tt-s4">
+          <div className="tt-eyebrow">Funktion 3</div>
+          <div className="tt-role-list">
+            <div className="tt-role-row"><User className="tt-role-icon" size={18} /><div className="tt-role-label">Spieler</div></div>
+            <div className="tt-role-row"><Award className="tt-role-icon" size={18} /><div className="tt-role-label">Trainer</div></div>
+            <div className="tt-role-row"><Briefcase className="tt-role-icon" size={18} /><div className="tt-role-label">Funktionär:in</div></div>
+            <div className="tt-role-row"><Stethoscope className="tt-role-icon" size={18} /><div className="tt-role-label">Physio &amp; Masseur:in</div></div>
+          </div>
+          <div className="tt-headline">NICHT NUR<br />FÜR SPIELER.</div>
+          <div className="tt-subline">Auch Trainer, Funktionär:innen, Physios und Masseur:innen finden hier ihren nächsten Verein.</div>
+        </div>
+
+        <div className="tt-scene tt-s5">
+          <div className="tt-eyebrow">Funktion 4</div>
+          <div className="tt-pin-zone">
+            <div className="tt-pin-ring tt-r1" />
+            <div className="tt-pin-ring tt-r2" />
+            <div className="tt-pin-ring tt-r3" />
+            <MapPin className="tt-pin-center" size={26} />
+          </div>
+          <div className="tt-distance-badge"><MapPin size={12} /><b>12&nbsp;km</b>&nbsp;entfernt</div>
+          <div className="tt-headline" style={{ marginTop: 16 }}>NUR DIE<br />ENTFERNUNG.</div>
+          <div className="tt-subline">Nie dein genauer Standort.</div>
+        </div>
+
+        <div className="tt-scene tt-s6">
+          <div className="tt-logo-mid">WECHSEL<span>.</span></div>
+          <div className="tt-headline">KOSTENLOS<br />STARTEN.</div>
+          <div className="tt-cta-btn">wechsel-app.com</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function LandingPage({ onStart }) {
   const [showPrivacy, setShowPrivacy] = useState(false);
   return (
     <div className="tm-landing">
       <div className="tm-landing-hero">
-        <div className="tm-brand"><span className="tm-brand-text">WECHSEL</span><span className="tm-brand-dot">.</span></div>
+        <div className="tm-brand">
+          <span className="tm-brand-text">WECHSEL</span><span className="tm-brand-dot">.</span>
+          <span className="tm-version-tag">{APP_VERSION}</span>
+        </div>
+        <div className="tm-trial-banner">Kostenlose Testphase bis {TRIAL_END_LABEL}</div>
         <p className="tm-landing-headline">Das Transferportal für den Amateurfußball in Österreich.</p>
         <p className="tm-landing-sub">
           Spieler, Vereine, Trainer, Funktionär:innen, Physios und Masseur:innen finden sich anonym –
@@ -734,6 +934,11 @@ function LandingPage({ onStart }) {
         <button className="tm-btn tm-btn--primary tm-landing-cta" onClick={onStart}>
           Kostenlos starten <ArrowRight size={16} />
         </button>
+      </div>
+
+      <div className="tm-landing-section">
+        <div className="tm-fieldset-title">In 30 Sekunden erklärt</div>
+        <LandingTeaser />
       </div>
 
       <div className="tm-landing-section">
@@ -1827,6 +2032,7 @@ function ProfileScreen({ profile, premiumDemo, onTogglePremium, onReset, onSignO
       {showPrivacy && <PolicyOverlay onClose={() => setShowPrivacy(false)} />}
 
       <div className="tm-disclaimer">
+        {APP_VERSION} · Kostenlose Testphase bis {TRIAL_END_LABEL}.<br />
         Diese Version läuft mit echtem Backend (Supabase) und echtem Login per E-Mail + Passwort. Für den vollständigen
         Betrieb fehlen noch: Vereinsverifizierung, eine Zahlungsanbindung für die Premium-Stufe, eine native App
         sowie eine juristische Prüfung der Datenschutzerklärung. Die Ausbildungsentschädigung ist eine
@@ -2183,7 +2389,10 @@ function TopBar({ premiumDemo, onTogglePremium, profiles, activeProfile, onSwitc
   const [switcherOpen, setSwitcherOpen] = useState(false);
   return (
     <div className="tm-topbar">
-      <div className="tm-brand tm-brand--small"><span className="tm-brand-text">WECHSEL</span><span className="tm-brand-dot">.</span></div>
+      <div className="tm-brand tm-brand--small">
+        <span className="tm-brand-text">WECHSEL</span><span className="tm-brand-dot">.</span>
+        <span className="tm-version-tag">{APP_VERSION}</span>
+      </div>
       <div className="tm-topbar-right">
         {profiles.length > 1 && (
           <div className="tm-profile-switcher">
@@ -2588,12 +2797,37 @@ const CSS = `
 .tm-brand--small .tm-brand-text { font-size: 22px; letter-spacing: 2px; }
 .tm-brand-dot { color: var(--floodlight); font-size: 40px; margin-left: 2px; }
 .tm-brand--small .tm-brand-dot { font-size: 22px; }
+.tm-version-tag {
+  align-self: center;
+  margin-left: 8px;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  color: var(--floodlight);
+  border: 1px solid rgba(244,195,97,0.4);
+  border-radius: 5px;
+  padding: 2px 6px;
+}
+.tm-brand--small .tm-version-tag { font-size: 9px; padding: 1px 5px; margin-left: 6px; }
 .tm-tagline { color: var(--chalk-dim); font-size: 14.5px; max-width: 320px; text-align: center; margin: 6px 0 28px; line-height: 1.5; }
 
 .tm-center-screen { min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 24px; max-width: 460px; margin: 0 auto; }
 
 .tm-landing { min-height: 100vh; max-width: 460px; margin: 0 auto; padding: 40px 20px 32px; display: flex; flex-direction: column; gap: 34px; }
 .tm-landing-hero { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 12px; }
+.tm-trial-banner {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--floodlight);
+  background: rgba(244,195,97,0.1);
+  border: 1px solid rgba(244,195,97,0.35);
+  border-radius: 20px;
+  padding: 5px 14px;
+}
 .tm-landing-headline { font-family: 'Bebas Neue', sans-serif; font-size: 26px; letter-spacing: 0.5px; line-height: 1.2; color: var(--chalk); max-width: 360px; }
 .tm-landing-sub { color: var(--chalk-dim); font-size: 14px; line-height: 1.55; max-width: 360px; }
 .tm-landing-cta { width: 100%; max-width: 300px; margin-top: 6px; }
@@ -2615,6 +2849,119 @@ const CSS = `
 .tm-landing-feature { display: flex; align-items: center; gap: 9px; font-size: 13.5px; color: var(--chalk-dim); }
 .tm-landing-feature svg { color: var(--floodlight); flex-shrink: 0; }
 .tm-landing-footer { display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center; padding-top: 8px; border-top: 1px dashed var(--line); }
+
+/* ---------- Landing-Teaser (autoplay Handy-Vorschau) ---------- */
+.tm-teaser-stage-wrap { position: relative; width: 100%; max-width: 340px; aspect-ratio: 390 / 844; margin: 0 auto; }
+.tm-teaser-stage {
+  position: relative; width: 100%; height: 100%; overflow: hidden; border-radius: 30px;
+  background:
+    radial-gradient(ellipse 140% 70% at 50% -10%, rgba(244,195,97,0.16) 0%, transparent 55%),
+    radial-gradient(circle at 50% 8%, #1b2530 0%, var(--pitch-night) 62%);
+  box-shadow: 0 0 0 1px var(--line), 0 20px 50px -18px rgba(0,0,0,0.6);
+}
+.tt-wordmark {
+  position: absolute; top: 22px; left: 16px; z-index: 3;
+  font-family: 'Bebas Neue', sans-serif; font-size: 14px; letter-spacing: 1.5px; color: var(--chalk);
+  display: flex; align-items: baseline; gap: 1px; opacity: 0.85;
+}
+.tt-wordmark span { color: var(--floodlight); }
+.tt-progress-row { position: absolute; top: 12px; left: 12px; right: 12px; display: flex; gap: 4px; z-index: 3; }
+.tt-seg { flex: 1; height: 3px; border-radius: 2px; background: rgba(237,237,226,0.18); overflow: hidden; }
+.tt-seg-fill { height: 100%; width: 0%; background: var(--floodlight); border-radius: 2px; }
+
+.tt-scene {
+  position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  padding: 78px 26px 34px; opacity: 0; transition: opacity 0.5s ease; text-align: center;
+}
+.tt-scene.tt-active { opacity: 1; }
+.tt-eyebrow { font-size: 9.5px; letter-spacing: 2.5px; text-transform: uppercase; color: var(--floodlight); margin-bottom: 9px; opacity: 0; }
+.tt-scene.tt-active .tt-eyebrow { animation: ttRiseIn 0.6s ease 0.15s forwards; }
+.tt-headline { font-family: 'Bebas Neue', sans-serif; font-size: 29px; line-height: 1.05; letter-spacing: 0.5px; color: var(--chalk); max-width: 260px; opacity: 0; }
+.tt-scene.tt-active .tt-headline { animation: ttRiseIn 0.6s ease 0.3s forwards; }
+.tt-subline { font-size: 11.5px; line-height: 1.5; color: var(--chalk-dim); max-width: 230px; margin-top: 10px; opacity: 0; }
+.tt-scene.tt-active .tt-subline { animation: ttRiseIn 0.6s ease 0.5s forwards; }
+@keyframes ttRiseIn { from { opacity: 0; transform: translateY(9px); } to { opacity: 1; transform: translateY(0); } }
+
+.tt-s0 .tt-hook-line1 { font-family: 'Bebas Neue', sans-serif; font-size: 32px; line-height: 1.08; color: var(--chalk); opacity: 0; }
+.tt-scene.tt-active.tt-s0 .tt-hook-line1 { animation: ttRiseIn 0.55s ease 0.1s forwards; }
+.tt-s0 .tt-hook-line2 { font-size: 12.5px; color: var(--chalk-dim); margin-top: 14px; max-width: 220px; opacity: 0; }
+.tt-scene.tt-active.tt-s0 .tt-hook-line2 { animation: ttRiseIn 0.55s ease 1.1s forwards; }
+
+.tt-s1 .tt-logo-big { font-family: 'Bebas Neue', sans-serif; font-size: 46px; letter-spacing: 2px; color: var(--chalk); display: flex; align-items: baseline; opacity: 0; transform: scale(0.9); }
+.tt-s1 .tt-logo-big span { color: var(--floodlight); }
+.tt-scene.tt-active.tt-s1 .tt-logo-big { animation: ttLogoPop 0.7s cubic-bezier(.2,.9,.3,1.3) 0.1s forwards; }
+@keyframes ttLogoPop { from { opacity: 0; transform: scale(0.85); } to { opacity: 1; transform: scale(1); } }
+.tt-s1 .tt-logo-tag { font-size: 10px; letter-spacing: 1px; text-transform: uppercase; color: var(--chalk-dim); margin-top: 14px; max-width: 230px; line-height: 1.6; opacity: 0; }
+.tt-scene.tt-active.tt-s1 .tt-logo-tag { animation: ttRiseIn 0.6s ease 0.55s forwards; }
+
+.tt-swipe-zone { position: relative; width: 190px; height: 260px; margin-bottom: 16px; }
+.tt-swipe-card {
+  position: absolute; inset: 0; background: linear-gradient(180deg, #171f26 0%, #131a1f 100%);
+  border: 1px solid var(--line); border-radius: 14px; padding: 12px; display: flex; flex-direction: column; gap: 7px; text-align: left;
+}
+.tt-scene.tt-active.tt-s2 .tt-swipe-card { animation: ttCardFling 6s ease-in-out infinite; }
+@keyframes ttCardFling {
+  0%   { transform: translateX(0) rotate(0deg); opacity: 1; }
+  58%  { transform: translateX(0) rotate(0deg); opacity: 1; }
+  72%  { transform: translateX(290px) rotate(26deg); opacity: 0; }
+  73%  { transform: translateX(-34px) rotate(0deg); opacity: 0; }
+  100% { transform: translateX(0) rotate(0deg); opacity: 0; }
+}
+.tt-card-top-row { display: flex; align-items: center; justify-content: space-between; }
+.tt-redacted-bar { width: 78px; height: 11px; border-radius: 6px; background: repeating-linear-gradient(45deg, rgba(237,237,226,0.16) 0 4px, rgba(237,237,226,0.08) 4px 8px); }
+.tt-card-stamp { font-size: 7.5px; letter-spacing: 1px; color: var(--chalk-dim); border: 1px solid var(--line); border-radius: 5px; padding: 2px 5px; }
+.tt-card-fact { font-size: 10px; color: var(--chalk-dim); display: flex; justify-content: space-between; border-top: 1px solid var(--line); padding-top: 6px; }
+.tt-card-fact b { color: var(--chalk); font-weight: 500; }
+.tt-card-avatar { width: 26px; height: 26px; border-radius: 50%; background: rgba(237,237,226,0.08); display: flex; align-items: center; justify-content: center; color: var(--chalk-dim); }
+.tt-match-burst { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; opacity: 0; pointer-events: none; }
+.tt-scene.tt-active.tt-s2 .tt-match-burst { animation: ttMatchPop 6s ease-in-out infinite; }
+@keyframes ttMatchPop {
+  0%, 64% { opacity: 0; transform: scale(0.6); }
+  70%     { opacity: 1; transform: scale(1.15); }
+  80%     { opacity: 1; transform: scale(1); }
+  90%, 100% { opacity: 0; transform: scale(1); }
+}
+.tt-heart { color: #6FCF97; }
+.tt-match-text { font-family: 'Bebas Neue', sans-serif; font-size: 22px; letter-spacing: 1px; color: #6FCF97; margin-top: 5px; }
+
+.tt-ae-card { background: rgba(180,110,20,0.09); border: 1px solid rgba(244,195,97,0.4); border-radius: 13px; padding: 14px 18px; text-align: center; margin-bottom: 12px; }
+.tt-ae-label { font-size: 8.5px; letter-spacing: 1.2px; text-transform: uppercase; color: var(--chalk-dim); }
+.tt-ae-amount { font-family: 'IBM Plex Mono', monospace; font-weight: 600; font-size: 27px; color: var(--floodlight); margin-top: 3px; font-variant-numeric: tabular-nums; }
+.tt-ae-caption { font-size: 9.5px; color: var(--chalk-dim); margin-top: 2px; }
+.tt-ae-table { width: 190px; border-collapse: collapse; font-size: 9.5px; }
+.tt-ae-table th { text-align: left; font-weight: 500; text-transform: uppercase; letter-spacing: 0.5px; color: var(--chalk-dim); font-size: 7.5px; padding: 3px 5px 3px 0; }
+.tt-ae-table td { padding: 3px 5px 3px 0; border-top: 1px solid var(--line); color: var(--chalk); }
+.tt-ae-table td:last-child, .tt-ae-table th:last-child { text-align: right; color: var(--floodlight); font-weight: 600; }
+
+.tt-role-list { display: flex; flex-direction: column; gap: 10px; width: 220px; margin-bottom: 6px; }
+.tt-role-row { display: flex; align-items: center; gap: 10px; background: rgba(237,237,226,0.04); border: 1px solid var(--line); border-radius: 9px; padding: 8px 10px; text-align: left; opacity: 0; transform: translateX(-8px); }
+.tt-scene.tt-active.tt-s4 .tt-role-row:nth-child(1) { animation: ttRoleIn 0.5s ease 0.15s forwards; }
+.tt-scene.tt-active.tt-s4 .tt-role-row:nth-child(2) { animation: ttRoleIn 0.5s ease 0.45s forwards; }
+.tt-scene.tt-active.tt-s4 .tt-role-row:nth-child(3) { animation: ttRoleIn 0.5s ease 0.75s forwards; }
+.tt-scene.tt-active.tt-s4 .tt-role-row:nth-child(4) { animation: ttRoleIn 0.5s ease 1.05s forwards; }
+@keyframes ttRoleIn { from { opacity: 0; transform: translateX(-8px); } to { opacity: 1; transform: translateX(0); } }
+.tt-role-icon { color: var(--floodlight); flex-shrink: 0; }
+.tt-role-label { font-size: 11.5px; color: var(--chalk); font-weight: 500; }
+
+.tt-pin-zone { position: relative; width: 120px; height: 120px; display: flex; align-items: center; justify-content: center; margin-bottom: 16px; }
+.tt-pin-ring { position: absolute; border-radius: 50%; border: 1px solid rgba(244,195,97,0.35); }
+.tt-pin-ring.tt-r1 { width: 52px; height: 52px; }
+.tt-pin-ring.tt-r2 { width: 86px; height: 86px; }
+.tt-pin-ring.tt-r3 { width: 120px; height: 120px; }
+.tt-scene.tt-active.tt-s5 .tt-pin-ring { animation: ttRingPulse 2.2s ease-out infinite; }
+.tt-scene.tt-active.tt-s5 .tt-pin-ring.tt-r2 { animation-delay: 0.4s; }
+.tt-scene.tt-active.tt-s5 .tt-pin-ring.tt-r3 { animation-delay: 0.8s; }
+@keyframes ttRingPulse { 0% { opacity: 0.9; } 70% { opacity: 0; } 100% { opacity: 0; } }
+.tt-pin-center { color: var(--floodlight); z-index: 2; }
+.tt-distance-badge { display: inline-flex; align-items: center; gap: 5px; background: var(--pitch-night); border: 1px solid var(--line); border-radius: 20px; padding: 5px 12px; font-size: 11px; color: var(--chalk); }
+.tt-distance-badge b { color: var(--floodlight); font-weight: 600; }
+
+.tt-logo-mid { font-family: 'Bebas Neue', sans-serif; font-size: 26px; letter-spacing: 1.5px; color: var(--chalk); display: flex; align-items: baseline; margin-bottom: 16px; }
+.tt-logo-mid span { color: var(--floodlight); }
+.tt-cta-btn {
+  position: relative; display: inline-flex; align-items: center; gap: 8px; background: var(--floodlight); color: var(--pitch-night);
+  font-family: 'IBM Plex Mono', monospace; font-weight: 600; font-size: 12px; border-radius: 22px; padding: 10px 20px; margin-top: 16px;
+}
 
 .tm-role-cards { display: flex; flex-direction: column; gap: 12px; width: 100%; max-width: 340px; }
 .tm-role-card {
