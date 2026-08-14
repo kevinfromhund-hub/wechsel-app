@@ -2884,24 +2884,24 @@ const CSS = `
 }
 .tt-scene.tt-active { opacity: 1; }
 .tt-eyebrow { font-size: 9.5px; letter-spacing: 2.5px; text-transform: uppercase; color: var(--floodlight); margin-bottom: 9px; opacity: 0; }
-.tt-scene.tt-active .tt-eyebrow { animation: ttRiseIn 0.6s ease 0.15s forwards; }
+.tt-scene.tt-active .tt-eyebrow { opacity: 1; animation: ttRiseIn 0.6s ease 0.15s forwards; }
 .tt-headline { font-family: 'Bebas Neue', sans-serif; font-size: 29px; line-height: 1.05; letter-spacing: 0.5px; color: var(--chalk); max-width: 260px; opacity: 0; }
-.tt-scene.tt-active .tt-headline { animation: ttRiseIn 0.6s ease 0.3s forwards; }
+.tt-scene.tt-active .tt-headline { opacity: 1; animation: ttRiseIn 0.6s ease 0.3s forwards; }
 .tt-subline { font-size: 11.5px; line-height: 1.5; color: var(--chalk-dim); max-width: 230px; margin-top: 10px; opacity: 0; }
-.tt-scene.tt-active .tt-subline { animation: ttRiseIn 0.6s ease 0.5s forwards; }
+.tt-scene.tt-active .tt-subline { opacity: 1; animation: ttRiseIn 0.6s ease 0.5s forwards; }
 @keyframes ttRiseIn { from { opacity: 0; transform: translateY(9px); } to { opacity: 1; transform: translateY(0); } }
 
 .tt-s0 .tt-hook-line1 { font-family: 'Bebas Neue', sans-serif; font-size: 32px; line-height: 1.08; color: var(--chalk); opacity: 0; }
-.tt-scene.tt-active.tt-s0 .tt-hook-line1 { animation: ttRiseIn 0.55s ease 0.1s forwards; }
+.tt-scene.tt-active.tt-s0 .tt-hook-line1 { opacity: 1; animation: ttRiseIn 0.55s ease 0.1s forwards; }
 .tt-s0 .tt-hook-line2 { font-size: 12.5px; color: var(--chalk-dim); margin-top: 14px; max-width: 220px; opacity: 0; }
-.tt-scene.tt-active.tt-s0 .tt-hook-line2 { animation: ttRiseIn 0.55s ease 1.1s forwards; }
+.tt-scene.tt-active.tt-s0 .tt-hook-line2 { opacity: 1; animation: ttRiseIn 0.55s ease 1.1s forwards; }
 
 .tt-s1 .tt-logo-big { font-family: 'Bebas Neue', sans-serif; font-size: 46px; letter-spacing: 2px; color: var(--chalk); display: flex; align-items: baseline; opacity: 0; transform: scale(0.9); }
 .tt-s1 .tt-logo-big span { color: var(--floodlight); }
-.tt-scene.tt-active.tt-s1 .tt-logo-big { animation: ttLogoPop 0.7s cubic-bezier(.2,.9,.3,1.3) 0.1s forwards; }
+.tt-scene.tt-active.tt-s1 .tt-logo-big { opacity: 1; transform: scale(1); animation: ttLogoPop 0.7s cubic-bezier(.2,.9,.3,1.3) 0.1s forwards; }
 @keyframes ttLogoPop { from { opacity: 0; transform: scale(0.85); } to { opacity: 1; transform: scale(1); } }
 .tt-s1 .tt-logo-tag { font-size: 10px; letter-spacing: 1px; text-transform: uppercase; color: var(--chalk-dim); margin-top: 14px; max-width: 230px; line-height: 1.6; opacity: 0; }
-.tt-scene.tt-active.tt-s1 .tt-logo-tag { animation: ttRiseIn 0.6s ease 0.55s forwards; }
+.tt-scene.tt-active.tt-s1 .tt-logo-tag { opacity: 1; animation: ttRiseIn 0.6s ease 0.55s forwards; }
 
 .tt-swipe-zone { position: relative; width: 190px; height: 260px; margin-bottom: 16px; }
 .tt-swipe-card {
@@ -2944,6 +2944,7 @@ const CSS = `
 
 .tt-role-list { display: flex; flex-direction: column; gap: 10px; width: 220px; margin-bottom: 6px; }
 .tt-role-row { display: flex; align-items: center; gap: 10px; background: rgba(237,237,226,0.04); border: 1px solid var(--line); border-radius: 9px; padding: 8px 10px; text-align: left; opacity: 0; transform: translateX(-8px); }
+.tt-scene.tt-active.tt-s4 .tt-role-row { opacity: 1; transform: translateX(0); }
 .tt-scene.tt-active.tt-s4 .tt-role-row:nth-child(1) { animation: ttRoleIn 0.5s ease 0.15s forwards; }
 .tt-scene.tt-active.tt-s4 .tt-role-row:nth-child(2) { animation: ttRoleIn 0.5s ease 0.45s forwards; }
 .tt-scene.tt-active.tt-s4 .tt-role-row:nth-child(3) { animation: ttRoleIn 0.5s ease 0.75s forwards; }
